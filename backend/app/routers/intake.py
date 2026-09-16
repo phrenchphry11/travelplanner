@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from collections.abc import Callable
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 from sqlmodel import Session
 
@@ -14,6 +16,7 @@ from app.agents.intake import (
 )
 from app.auth import current_user
 from app.db import get_session
+from app.geocoding import get_trip_locator
 from app.models import Day, Gap, Place, Trip, TripMember, User
 from app.routers.trips import TripOut, to_trip_out
 
@@ -63,6 +66,7 @@ class ConfirmDraft(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     start_date: date
     travelers: int | None = Field(default=None, ge=1, le=50)
+    destinations: list[str] = Field(default_factory=list, max_length=20)
     interests: list[str] = Field(default_factory=list, max_length=20)
     days: list[ConfirmDay] = Field(min_length=1, max_length=MAX_DAYS)
 
@@ -94,8 +98,10 @@ def _date_range(start: date, end: date) -> str:
 @router.post("/confirm", response_model=TripOut, status_code=status.HTTP_201_CREATED)
 def confirm_draft(
     body: ConfirmDraft,
+    background: BackgroundTasks,
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
+    locate: Callable[[str], None] = Depends(get_trip_locator),
 ) -> TripOut:
     days_count = len(body.days)
     end_date = body.start_date + timedelta(days=days_count - 1)
@@ -105,6 +111,7 @@ def confirm_draft(
         start_date=body.start_date,
         end_date=end_date,
         travelers=body.travelers,
+        destinations=[d.strip() for d in body.destinations if d.strip()],
         interests=[i.strip() for i in body.interests if i.strip()],
         status="planning",
     )
@@ -158,4 +165,5 @@ def confirm_draft(
     session.add_all(gaps)
     session.commit()
     session.refresh(trip)
+    background.add_task(locate, trip.id)
     return to_trip_out(trip, open_gap_count=len(gaps))

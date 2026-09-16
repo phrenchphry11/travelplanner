@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
     anthropic_api_key: str = ""
     intake_model: str = "claude-opus-5"
+    # OpenStreetMap Nominatim. Policy: https://operations.osmfoundation.org/policies/nominatim/
+    # Max 1 req/s, identifying User-Agent, cache results. Swap the URL to change provider.
+    nominatim_url: str = "https://nominatim.openstreetmap.org"
+    nominatim_user_agent: str = "travelplanner/0.1 (+https://github.com/phrenchphry11/travelplanner)"
     worker_poll_seconds: float = 3.0
 
     @property

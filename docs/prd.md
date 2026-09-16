@@ -116,6 +116,18 @@ toggles, detail band with tabs.
 - **Lodging tab**: one row per stay across the trip with dates, status, link.
 - **Activities tab**: table of all activities with day, kind, status.
 - Map layers: lodging, food, sights, other; toggle per layer.
+
+Implemented 2026-09-16 (first cut):
+- Map shows a pin per base city and a dashed route line in visit order.
+  Clicking a pin opens that city's first day. OpenStreetMap tiles.
+- City coordinates come from OpenStreetMap Nominatim, looked up server-side
+  after confirm and cached. Policy: https://operations.osmfoundation.org/policies/nominatim/
+  (max 1 request/second, identifying User-Agent, results cached, no
+  autocomplete or bulk use). Commercial use requires a self-hosted instance
+  or a paid provider; the base URL is configurable.
+- Day tab has two slots, *Plans for the day* and *Where you're sleeping*,
+  instead of morning/afternoon/evening. Layer toggles and the edit drawer
+  are deferred until there are hotels and activities to show.
 - Editing: click any item to open a side drawer with its fields.
 
 ### 5.5 Gap detail and candidate comparison (the inbox)

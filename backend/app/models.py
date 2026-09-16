@@ -42,6 +42,7 @@ class Trip(SQLModel, table=True):
     end_date: date | None = None
     home_base_note: str = ""
     travelers: int | None = None
+    destinations: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     interests: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     status: str = "dreaming"  # dreaming | planning | booked | done
     share_slug: str | None = Field(default=None, index=True, unique=True)
@@ -65,6 +66,7 @@ class Place(SQLModel, table=True):
     lat: float | None = None
     lng: float | None = None
     precision: str = "unknown"  # exact | approximate | unknown
+    geocoded_at: datetime | None = None  # set when a lookup was attempted, found or not
     address: str = ""
     google_maps_url: str = ""
     website_url: str = ""
@@ -190,4 +192,15 @@ class ResearchJob(SQLModel, table=True):
     output_tokens: int = 0
     search_count: int = 0
     cost_usd: float = 0.0
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class GeocodeCache(SQLModel, table=True):
+    """Nominatim results keyed by normalized query. Required by its usage policy."""
+    __tablename__ = "geocode_cache"
+    query: str = Field(primary_key=True)
+    found: bool = False
+    lat: float | None = None
+    lng: float | None = None
+    display_name: str = ""
     created_at: datetime = Field(default_factory=utcnow)

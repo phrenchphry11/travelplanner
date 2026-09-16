@@ -122,3 +122,48 @@ export type DayOut = {
   base_city: string | null;
   open_gap_count: number;
 };
+
+export type BoardDay = { id: string; date: string; title: string; summary: string; base_place_id: string | null };
+export type BoardPlace = {
+  id: string;
+  name: string;
+  kind: string;
+  lat: number | null;
+  lng: number | null;
+  precision: string;
+  locating: boolean;
+};
+export type BoardJob = { id: string; status: "queued" | "running" | "done" | "failed"; error: string };
+export type BoardGap = {
+  id: string;
+  day_id: string | null;
+  kind: "lodging" | "transit" | "activity" | "food" | "question";
+  prompt: string;
+  status: "open" | "researching" | "answered" | "dismissed";
+  covers_day_ids: string[];
+  job: BoardJob | null;
+};
+export type BoardLodging = { id: string; place_id: string; check_in: string; check_out: string; status: string; booking_url: string };
+export type BoardActivity = { id: string; day_id: string; name: string; kind: string; place_id: string | null; start_time: string; status: string };
+export type Board = {
+  trip: Trip;
+  days: BoardDay[];
+  places: BoardPlace[];
+  gaps: BoardGap[];
+  lodgings: BoardLodging[];
+  activities: BoardActivity[];
+};
+
+export function isGapOpen(gap: BoardGap): boolean {
+  return gap.status === "open" || gap.status === "researching";
+}
+
+export function isJobActive(job: BoardJob | null): boolean {
+  return !!job && (job.status === "queued" || job.status === "running");
+}
+
+/** "Sat, May 1" for a YYYY-MM-DD string. */
+export function shortDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}

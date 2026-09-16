@@ -16,7 +16,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.db import engine
-from app.models import ResearchJob, utcnow
+from app.models import Gap, ResearchJob, utcnow
 
 log = logging.getLogger("worker")
 _running = True
@@ -51,9 +51,15 @@ def claim_job(session: Session) -> ResearchJob | None:
 
 def run_job(session: Session, job: ResearchJob) -> None:
     log.info("running job %s for gap %s", job.id, job.gap_id)
-    # TODO(travelplanner-jdm): research agent goes here.
-    job.status = "done"
+    # TODO(travelplanner-jdm): research agent goes here. Until then, fail the
+    # job with a plain message and reopen the gap so the board shows it clearly.
+    job.status = "failed"
+    job.error = "Finding options isn't available yet."
     job.finished_at = utcnow()
+    gap = session.get(Gap, job.gap_id)
+    if gap is not None and gap.status == "researching":
+        gap.status = "open"
+        session.add(gap)
     session.add(job)
     session.commit()
 

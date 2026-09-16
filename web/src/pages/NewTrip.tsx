@@ -77,6 +77,7 @@ export default function NewTrip() {
           title: draft.title,
           start_date: draft.start_date,
           travelers: draft.travelers,
+          destinations: draft.destinations,
           interests: draft.interests,
           days: draft.days,
         }),

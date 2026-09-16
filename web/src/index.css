@@ -88,3 +88,56 @@ button.icon { padding: 6px 10px; background: transparent; color: var(--ink); bor
 .day-summary li:first-child { border-top: 0; }
 .day-summary .gaps { margin: 0; }
 @media (max-width: 640px) { .day-summary li { grid-template-columns: 1fr auto; } .day-summary .day-date { grid-column: 1 / -1; } }
+
+/* Planning board */
+.page.wide { max-width: 1280px; }
+.board-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.board-heading h1 { margin: 6px 0 2px; }
+.small-button { padding: 6px 12px; font-size: 0.875rem; }
+.board { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.map-frame { position: sticky; top: 16px; height: calc(100vh - 32px); max-height: 720px; min-height: 360px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #e8e4dc; }
+.map { height: 100%; width: 100%; }
+.map-note { position: absolute; left: 12px; bottom: 12px; z-index: 500; background: rgba(255, 255, 255, 0.95); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 0.875rem; }
+.board-panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.day-picker { display: grid; gap: 4px; margin-bottom: 12px; }
+.day-picker select { font: inherit; padding: 8px 10px; border: 1px solid #cfc8bb; border-radius: 8px; background: #fff; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; overflow-x: auto; }
+.tab { background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 12px; white-space: nowrap; }
+.tab.active { color: var(--ink); border-bottom-color: var(--ink); }
+.tab-body h3 { font-size: 1rem; margin: 16px 0 8px; }
+.tab-body h3:first-child { margin-top: 4px; }
+.tab-body h4 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
+
+.row-button { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) auto; gap: 12px; align-items: center; width: 100%; text-align: left; background: transparent; color: inherit; border: 0; border-radius: 0; padding: 10px 12px; font-weight: 400; }
+.row-button:hover, .row-button:focus-visible { background: #f3f0ea; }
+.day-summary li { padding: 0; display: block; }
+.missing-list { list-style: none; padding: 0; margin: 0; border: 1px solid var(--line); border-radius: 10px; }
+.missing-list li + li { border-top: 1px solid var(--line); }
+
+.day-header { margin-bottom: 12px; }
+.day-header h3 { font-size: 1.25rem; margin: 2px 0 6px; }
+.slot-group { margin-top: 16px; }
+.gap-slot { border: 1px dashed #c9c3b8; border-radius: 10px; padding: 12px; margin-bottom: 8px; background: #fbfaf7; }
+.gap-slot.looking { border-style: solid; border-color: #bcd0e6; background: #f2f6fb; }
+.gap-prompt { margin: 0 0 8px; font-weight: 600; }
+.gap-status { margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+.gap-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.gap-actions button { padding: 6px 14px; }
+.link-button { background: transparent; border: 0; color: var(--accent); padding: 0; font-weight: 400; text-decoration: underline; }
+.link-button:disabled { color: var(--muted); text-decoration: none; }
+.plan-item { padding: 8px 0; }
+.dot-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .dot-pulse { animation: none; } }
+
+.stay-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.stay-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+.stay-row .gap-slot { margin: 0; }
+
+@media (max-width: 900px) {
+  .board { grid-template-columns: 1fr; }
+  .map-frame { position: relative; top: 0; height: 320px; min-height: 0; }
+  .stay-row { grid-template-columns: 1fr; }
+  .row-button { grid-template-columns: 1fr auto; }
+  .row-button .day-date { grid-column: 1 / -1; }
+}
