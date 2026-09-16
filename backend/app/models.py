@@ -18,7 +18,12 @@ def new_id() -> str:
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    """Current UTC time without tzinfo.
+
+    Columns are TIMESTAMP WITHOUT TIME ZONE. Passing an aware datetime makes
+    Postgres convert it through the connection's timezone, so store naive UTC.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def new_share_slug() -> str:

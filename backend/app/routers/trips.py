@@ -106,7 +106,10 @@ def create_trip(
     session: Session = Depends(get_session),
 ) -> TripOut:
     trip = Trip(owner_id=user.id, **body.model_dump())
+    # No ORM relationships are declared, so SQLAlchemy won't order inserts by
+    # foreign key. Flush parents before children.
     session.add(trip)
+    session.flush()
     session.add(TripMember(trip_id=trip.id, user_id=user.id, role="owner"))
     session.commit()
     session.refresh(trip)
@@ -132,11 +135,11 @@ def delete_trip(
     trip = get_member_trip(session, trip_id, user)
     if trip.owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can delete a trip")
-    # Children first; SQLite doesn't enforce FK cascades by default.
+    # Children before parents, flushing each table so deletes run in this order.
     for model in (ResearchJob, Source, Candidate, Gap, Activity, Transit, Lodging, Day, Place, TripMember):
         for row in session.exec(select(model).where(model.trip_id == trip.id)):
             session.delete(row)
-    session.flush()
+        session.flush()
     session.delete(trip)
     session.commit()
 

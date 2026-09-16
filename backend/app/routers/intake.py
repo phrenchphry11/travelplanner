@@ -115,7 +115,10 @@ def confirm_draft(
         interests=[i.strip() for i in body.interests if i.strip()],
         status="planning",
     )
+    # No ORM relationships are declared, so SQLAlchemy won't order inserts by
+    # foreign key. Flush each level before adding rows that reference it.
     session.add(trip)
+    session.flush()
     session.add(TripMember(trip_id=trip.id, user_id=user.id, role="owner"))
 
     places: dict[str, Place] = {}
@@ -125,6 +128,7 @@ def confirm_draft(
         if key not in places:
             places[key] = Place(trip_id=trip.id, name=d.base_city, kind="city")
             session.add(places[key])
+        session.flush()  # the day's place must exist before the day
         day = Day(
             trip_id=trip.id,
             date=body.start_date + timedelta(days=i),
@@ -135,6 +139,7 @@ def confirm_draft(
         days.append(day)
         session.add(day)
 
+    session.flush()  # days before the gaps that reference them
     gaps: list[Gap] = []
     # One lodging gap per consecutive stay. The last day of the trip is assumed
     # to be a departure day with no night to book.

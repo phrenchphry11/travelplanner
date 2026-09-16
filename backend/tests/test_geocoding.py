@@ -4,13 +4,15 @@ import httpx
 from sqlmodel import Session, select
 
 from app.geocoding import GeoResult, cached_geocode, geocode_trip_places, needs_lookup
-from app.models import GeocodeCache, Place, Trip, User
+from app.models import GeocodeCache, Place, Trip, User, utcnow
 
 
 def _trip_with_cities(session, cities, destinations=("Portugal",)):
     session.add(User(id="u", email="u@example.com"))
+    session.flush()
     trip = Trip(owner_id="u", title="t", destinations=list(destinations))
     session.add(trip)
+    session.flush()
     places = [Place(trip_id=trip.id, name=c, kind="city") for c in cities]
     session.add_all(places)
     session.commit()
@@ -62,7 +64,7 @@ def test_cache_prevents_repeat_network_calls(session):
 
 def test_skips_places_already_attempted(engine, session):
     trip, places = _trip_with_cities(session, ["Lisbon"])
-    places[0].geocoded_at = datetime.now(timezone.utc)
+    places[0].geocoded_at = utcnow()
     session.add(places[0])
     session.commit()
     fetch = FakeFetch({})

@@ -56,7 +56,8 @@ bd close <id>         # Complete work
 ```bash
 # Backend (from backend/)
 .venv/bin/pip install -r requirements-dev.txt
-.venv/bin/pytest -q                    # API tests, in-memory SQLite, auth overridden
+.venv/bin/pytest -q                    # API tests, in-memory SQLite (FKs on), auth overridden
+TEST_DATABASE_URL=postgresql://postgres@localhost:55432/tp .venv/bin/pytest -q  # same suite on Postgres; run before deploying DB changes
 .venv/bin/alembic upgrade head         # apply migrations to DATABASE_URL
 .venv/bin/uvicorn app.main:app --reload --port 8000
 .venv/bin/python -m worker
@@ -79,4 +80,10 @@ Product spec: `docs/prd.md`. Schema: `docs/data-model.md`.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Models declare foreign keys but no ORM relationships, so SQLAlchemy does
+  not order inserts or deletes by dependency. When writing related rows in
+  one transaction, `session.flush()` parents before adding children (and
+  delete children first, flushing per table). Postgres enforces this; tests
+  run SQLite with `PRAGMA foreign_keys=ON` to catch it locally.
+- Timestamps are stored as naive UTC (`app.models.utcnow()`). Never write an
+  aware datetime to a column: Postgres converts it through the session timezone.

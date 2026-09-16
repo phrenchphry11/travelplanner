@@ -1,7 +1,9 @@
+import os
+
 import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel
 
@@ -14,13 +16,26 @@ from app.models import User
 
 @pytest.fixture
 def engine():
+    """In-memory SQLite by default. Set TEST_DATABASE_URL to run against Postgres,
+    which enforces foreign keys the way production does."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if url:
+        url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+        engine = create_engine(url)
+        SQLModel.metadata.drop_all(engine)
+        SQLModel.metadata.create_all(engine)
+        yield engine
+        engine.dispose()
+        return
     engine = create_engine(
         "sqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    # Enforce foreign keys like Postgres does.
+    event.listen(engine, "connect", lambda conn, _: conn.execute("PRAGMA foreign_keys=ON"))
     SQLModel.metadata.create_all(engine)
-    return engine
+    yield engine
 
 
 @pytest.fixture
