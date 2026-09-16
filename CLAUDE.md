@@ -53,17 +53,29 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+# Backend (from backend/)
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest -q                    # API tests, in-memory SQLite, auth overridden
+.venv/bin/alembic upgrade head         # apply migrations to DATABASE_URL
+.venv/bin/uvicorn app.main:app --reload --port 8000
+.venv/bin/python -m worker
+
+# Frontend (from web/)
+npm install
+npm run build                          # tsc + vite build; must pass before commit
+npm run dev                            # http://localhost:5173
 ```
+
+Local env: `backend/.env` (CLERK_ISSUER) and `web/.env.local`
+(VITE_CLERK_PUBLISHABLE_KEY, VITE_API_URL). Both are gitignored.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+React + Vite frontend (`web/`) talks to a FastAPI API (`backend/app/`) with
+Clerk auth. A Python worker (`backend/worker/`) polls the `research_jobs`
+table. Postgres on Render, SQLite locally. Deployed via `render.yaml`.
+Product spec: `docs/prd.md`. Schema: `docs/data-model.md`.
 
 ## Conventions & Patterns
 

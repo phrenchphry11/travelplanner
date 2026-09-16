@@ -1,56 +1,68 @@
-import { useAuth, UserButton } from "@clerk/clerk-react";
 import { useEffect, useState } from "react";
-import { api, type Trip } from "../lib/api";
+import { Link } from "react-router-dom";
+import TopBar from "../components/TopBar";
+import { formatDateRange, STATUS_LABELS, useApi, type Trip } from "../lib/api";
+
+function gapLabel(count: number): string {
+  if (count === 0) return "Nothing missing";
+  return count === 1 ? "1 thing still missing" : `${count} things still missing`;
+}
 
 export default function TripList() {
-  const { getToken } = useAuth();
+  const api = useApi();
   const [trips, setTrips] = useState<Trip[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const token = await getToken();
-        const data = await api<Trip[]>("/trips", token);
-        if (!cancelled) setTrips(data);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      }
-    })();
+    api<Trip[]>("/trips")
+      .then((data) => !cancelled && setTrips(data))
+      .catch((e: Error) => !cancelled && setError(e.message));
     return () => {
       cancelled = true;
     };
-  }, [getToken]);
+  }, [api]);
 
   return (
     <main className="page">
-      <header className="topbar">
+      <TopBar />
+      <div className="page-heading">
         <h1>Your trips</h1>
-        <UserButton />
-      </header>
-      {error && <p className="error">Could not load trips: {error}</p>}
-      {trips === null && !error && <p>Loading…</p>}
+        {trips && trips.length > 0 && (
+          <Link to="/trips/new" className="button">
+            Start a trip
+          </Link>
+        )}
+      </div>
+
+      {error && <p className="error">We couldn't load your trips. {error}</p>}
+      {trips === null && !error && <p className="muted">Loading…</p>}
+
       {trips && trips.length === 0 && (
         <section className="empty">
-          <p>No trips yet.</p>
+          <h2>Plan your first trip</h2>
           <p>
-            Tell us about a trip you're thinking about and we'll sketch the days, then help
-            you fill in where to stay and what to do.
+            Tell us about a trip you're thinking about. We'll sketch out the days, then help you
+            find where to stay and what to do. You pick everything.
           </p>
-          <button disabled title="Coming in the intake epic">
+          <Link to="/trips/new" className="button">
             Start a trip
-          </button>
+          </Link>
         </section>
       )}
+
       {trips && trips.length > 0 && (
-        <ul className="trip-list">
+        <ul className="trip-grid">
           {trips.map((t) => (
             <li key={t.id}>
-              <strong>{t.title}</strong>
-              <span>
-                {t.start_date ?? "?"} → {t.end_date ?? "?"} · {t.status}
-              </span>
+              <Link to={`/trips/${t.id}`} className="trip-card">
+                <span className={`status-pill status-${t.status}`}>{STATUS_LABELS[t.status]}</span>
+                <h2>{t.title}</h2>
+                <p className="muted">{formatDateRange(t.start_date, t.end_date)}</p>
+                <p className={t.open_gap_count > 0 ? "gaps has-gaps" : "gaps"}>
+                  {gapLabel(t.open_gap_count)}
+                </p>
+              </Link>
             </li>
           ))}
         </ul>

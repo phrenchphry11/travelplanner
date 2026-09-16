@@ -1,20 +1,45 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.auth import current_user
 from app.db import get_session
-from app.models import Trip, TripMember, User
+from app.models import (
+    Activity,
+    Candidate,
+    Day,
+    Gap,
+    Lodging,
+    Place,
+    ResearchJob,
+    Source,
+    Transit,
+    Trip,
+    TripMember,
+    User,
+)
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
+TRIP_STATUSES = ("dreaming", "planning", "booked", "done")
+
 
 class TripCreate(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=200)
     start_date: date | None = None
     end_date: date | None = None
+
+    @model_validator(mode="after")
+    def _check_dates(self) -> "TripCreate":
+        self.title = self.title.strip()
+        if not self.title:
+            raise ValueError("Title can't be blank")
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValueError("End date must be on or after the start date")
+        return self
 
 
 class TripOut(BaseModel):
@@ -23,21 +48,55 @@ class TripOut(BaseModel):
     start_date: date | None
     end_date: date | None
     status: str
-    share_slug: str | None
+    open_gap_count: int = 0
+
+
+def _to_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
+    return TripOut(
+        id=trip.id,
+        title=trip.title,
+        start_date=trip.start_date,
+        end_date=trip.end_date,
+        status=trip.status,
+        open_gap_count=open_gap_count,
+    )
+
+
+def get_member_trip(session: Session, trip_id: str, user: User) -> Trip:
+    """Return the trip if the user is a member, else 404 (never leak existence)."""
+    member = session.get(TripMember, (trip_id, user.id))
+    trip = session.get(Trip, trip_id) if member else None
+    if trip is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Trip not found")
+    return trip
+
+
+def _open_gap_counts(session: Session, trip_ids: list[str]) -> dict[str, int]:
+    if not trip_ids:
+        return {}
+    rows = session.exec(
+        select(Gap.trip_id, func.count())
+        .where(Gap.trip_id.in_(trip_ids), Gap.status.in_(("open", "researching")))
+        .group_by(Gap.trip_id)
+    )
+    return {trip_id: count for trip_id, count in rows}
 
 
 @router.get("", response_model=list[TripOut])
 def list_trips(
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
-) -> list[Trip]:
-    stmt = (
-        select(Trip)
-        .join(TripMember, TripMember.trip_id == Trip.id)
-        .where(TripMember.user_id == user.id)
-        .order_by(Trip.created_at.desc())
+) -> list[TripOut]:
+    trips = list(
+        session.exec(
+            select(Trip)
+            .join(TripMember, TripMember.trip_id == Trip.id)
+            .where(TripMember.user_id == user.id)
+            .order_by(Trip.created_at.desc())
+        )
     )
-    return list(session.exec(stmt))
+    counts = _open_gap_counts(session, [t.id for t in trips])
+    return [_to_out(t, counts.get(t.id, 0)) for t in trips]
 
 
 @router.post("", response_model=TripOut, status_code=status.HTTP_201_CREATED)
@@ -45,13 +104,13 @@ def create_trip(
     body: TripCreate,
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
-) -> Trip:
+) -> TripOut:
     trip = Trip(owner_id=user.id, **body.model_dump())
     session.add(trip)
     session.add(TripMember(trip_id=trip.id, user_id=user.id, role="owner"))
     session.commit()
     session.refresh(trip)
-    return trip
+    return _to_out(trip)
 
 
 @router.get("/{trip_id}", response_model=TripOut)
@@ -59,9 +118,24 @@ def get_trip(
     trip_id: str,
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
-) -> Trip:
-    member = session.get(TripMember, (trip_id, user.id))
-    trip = session.get(Trip, trip_id) if member else None
-    if trip is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Trip not found")
-    return trip
+) -> TripOut:
+    trip = get_member_trip(session, trip_id, user)
+    return _to_out(trip, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
+
+
+@router.delete("/{trip_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_trip(
+    trip_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> None:
+    trip = get_member_trip(session, trip_id, user)
+    if trip.owner_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can delete a trip")
+    # Children first; SQLite doesn't enforce FK cascades by default.
+    for model in (ResearchJob, Source, Candidate, Gap, Activity, Transit, Lodging, Day, Place, TripMember):
+        for row in session.exec(select(model).where(model.trip_id == trip.id)):
+            session.delete(row)
+    session.flush()
+    session.delete(trip)
+    session.commit()
