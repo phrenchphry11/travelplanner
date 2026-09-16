@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import CompareDrawer from "../components/board/CompareDrawer";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { ActivitiesTab, DayTab, LodgingTab, OverviewTab } from "../components/board/tabs";
 import TripMap, { type MapOption } from "../components/board/TripMap";
 import TopBar from "../components/TopBar";
@@ -38,6 +39,7 @@ export default function TripBoard() {
   const [startingGapIds, setStartingGapIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [hoveredCandidateId, setHoveredCandidateId] = useState<string | null>(null);
+  const [pendingChange, setPendingChange] = useState<BoardGap | null>(null);
   const polls = useRef(0);
 
   const load = useCallback(async () => {
@@ -133,10 +135,35 @@ export default function TripBoard() {
     closeDrawer();
   }
 
-  async function changeChoice(gap: BoardGap) {
-    if (!window.confirm("Change this? It goes back to your options so you can pick again.")) return;
+  function changeChoice(gap: BoardGap) {
+    setPendingChange(gap);
+  }
+
+  async function confirmChange() {
+    if (!pendingChange) return;
+    const gap = pendingChange;
     await act(() => api(`/gaps/${gap.id}/reopen`, { method: "POST" }));
+    setPendingChange(null);
     nav({ gap: gap.id });
+  }
+
+  function describeChoice(gap: BoardGap): { name: string; when: string } {
+    if (!board) return { name: "This choice", when: "" };
+    if (gap.resolved_by_kind === "lodging") {
+      const stay = board.lodgings.find((l) => l.id === gap.resolved_by_id);
+      const place = board.places.find((p) => p.id === stay?.place_id);
+      const nights = stay ? Math.round((Date.parse(stay.check_out) - Date.parse(stay.check_in)) / 86_400_000) : 0;
+      return {
+        name: place?.name ?? "This stay",
+        when: stay ? `your ${nights} night${nights === 1 ? "" : "s"} from ${new Date(`${stay.check_in}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}` : "this stay",
+      };
+    }
+    const activity = board.activities.find((a) => a.id === gap.resolved_by_id);
+    const day = board.days.find((d) => d.id === activity?.day_id);
+    return {
+      name: activity?.name ?? "This plan",
+      when: day ? new Date(`${day.date}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : "this day",
+    };
   }
 
   async function deleteTrip() {
@@ -265,6 +292,22 @@ export default function TripBoard() {
           )}
         </section>
       </div>
+
+      <ConfirmDialog
+        open={pendingChange !== null}
+        title="Change your choice?"
+        confirmLabel="Change it"
+        busy={busy}
+        onConfirm={confirmChange}
+        onCancel={() => setPendingChange(null)}
+      >
+        {pendingChange && (
+          <p>
+            <strong>{describeChoice(pendingChange).name}</strong> will be removed from {describeChoice(pendingChange).when}.
+            Your other options are still there, so you can pick again.
+          </p>
+        )}
+      </ConfirmDialog>
     </main>
   );
 }
