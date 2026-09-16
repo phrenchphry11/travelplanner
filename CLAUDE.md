@@ -50,6 +50,43 @@ bd close <id>         # Complete work
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
 
+- Exception: agents in a `travelplanner-agents/` worktree push their branch
+  and open a PR, never master (see Parallel Agents)
+
+## Parallel Agents
+
+`scripts/agents.sh start --ready 3` (or `start <bead-id>...`) claims beads and
+launches one background Claude session per bead, each in
+`../travelplanner-agents/<bead-id>` on branch `agent/<bead-id>`. `list` shows
+their PRs; `clean <bead-id>` removes a finished worktree. Watch sessions with
+`claude agents`.
+
+Sessions sharing the main checkout see each other's uncommitted edits. Stage
+named files only, never `git add .` or `git commit -a`.
+
+Rules for an agent in one of those worktrees:
+
+- **One bead, one branch.** Stay in scope; file new beads for anything else.
+  Every session is the same bd user, so `--claim` does not stop two sessions
+  taking one bead: only start beads whose status is `open`.
+- **PRs, not master.** Render deploys from master. Run the quality gates,
+  `git push -u origin agent/<bead-id>`, open a PR with `gh pr create`, and put
+  the URL in the bead's notes. Leave the bead in progress until the PR merges.
+- **Ports come from your slot** (`.agent-slot`, N): API `8000+N`, web
+  `5173+N` (`npm run dev -- --port <port>`). Your `.env` files are already set.
+- **Postgres tests use your own DB.** The suite drops all tables, so never
+  point it at the shared `tp` DB. Run `createdb -h localhost -p 55432 -U
+  postgres tp_agent_N` and use
+  `TEST_DATABASE_URL=postgresql://postgres@localhost:55432/tp_agent_N`.
+- **Migrations:** before opening a PR that adds one, `git fetch && git rebase
+  origin/master`, then check `.venv/bin/alembic heads` shows one head. If two,
+  set your migration's `down_revision` to the other head.
+- **Shared dependencies:** `backend/.venv` is a symlink to the main checkout's
+  venv. Don't install into it; if requirements change, say so in the PR.
+  `web/node_modules` is your own copy, so `npm install` is fine.
+- **Conflicts:** rebase on `origin/master` and resolve; don't merge master
+  into your branch.
+
 
 ## Build & Test
 
