@@ -121,7 +121,18 @@ names.
 Mobile-first. Vertical day list; tapping a day expands its timeline. Sticky
 map at the top that recenters on the expanded day. Each item links out
 (Google Maps, booking site). No editing, no sign-in required, no agent
-controls. Unpublish removes the link.
+controls.
+
+Privacy model (decided 2026-09-16): an unguessable random slug is the only
+protection in v1; no passcode. Guardrails:
+- Publishing is an explicit toggle, off by default. Nothing is reachable
+  until the planner clicks *Publish*.
+- *Unpublish* and *Regenerate link* are one click each; the old link dies.
+- The public payload is stripped: no confirmation codes, prices, rejected
+  candidates, gaps, or agent internals. Only where, when, and links out.
+- Responses carry `noindex` headers so search engines never list them.
+Passcodes or traveler sign-in are deferred until genuinely sensitive data
+(confirmation numbers, flight details) is added to the shared view.
 
 ## 6. Agent behavior
 
@@ -134,9 +145,18 @@ Asks at most two clarifying questions. Deterministic defaults where possible
 runs a bounded loop of web searches, reads results, and writes 3–5 Candidate
 rows.
 
+Search provider (decided 2026-09-16): Anthropic's built-in web search tool
+(`web_search_20260318`) via the Anthropic SDK. Citations are always on and
+map directly to Source rows. Per job: `max_uses` cap, `user_location` set to
+the destination city, and a `blocked_domains` list for low-quality
+aggregators. Cost is $10 per 1,000 searches plus tokens for results. The
+search call is one pluggable step in the worker so a later swap to a
+third-party search API is cheap.
+
 Inputs: trip summary, day context (date, base city, neighbouring days),
 gap kind and prompt, user interests, any *Find more* nudge, list of already
-rejected candidates and their reasons.
+rejected candidates and their reasons, and (later) the user's loyalty
+programs and credit cards so perks can be flagged.
 
 Outputs: Candidate rows with summary, pros, cons, confidence, a Place with
 coordinates (marked approximate if geocoded from an address by the model),
@@ -175,8 +195,10 @@ Render, one `render.yaml` blueprint:
 | worker | Background worker | Python. Polls a `research_jobs` table (Postgres-backed queue, no Redis in v1). Runs the research agent with the Anthropic SDK |
 | db | Postgres | SQLModel / SQLAlchemy + Alembic migrations |
 
-Share links: a random slug token on the Trip. `GET /share/{slug}` returns the
-public itinerary payload; the web app renders it without sign-in.
+Share links: a 128-bit random slug on the Trip, null until published.
+`GET /share/{slug}` returns the stripped public payload with `noindex`
+headers; the web app renders it without sign-in. Regenerating replaces the
+slug; unpublishing nulls it.
 
 Starter tier on api and worker so nothing sleeps.
 
@@ -212,6 +234,7 @@ Starter tier on api and worker so nothing sleeps.
 | Structured place data (Google Places) | | | ✓ |
 | Calendar export, PDF | | | ✓ |
 | Paid tier / credits | | | ✓ |
+| Loyalty and card perks context (e.g. Chase Sapphire Reserve credits, transfer partners) | | | ✓ |
 
 ## 11. Success criteria
 
@@ -221,15 +244,23 @@ Starter tier on api and worker so nothing sleeps.
 - Agent cost per trip is known and under a target to be set after the first
   three trips.
 
+## 11a. Later: loyalty and card perks
+
+Users list the cards and loyalty programs they hold by name only (never
+account access). The research agent searches current, public benefit
+details and badges candidates where a perk may apply: hotel bookable through
+the card's travel portal, dining credits, airline transfer partners.
+Every perk badge carries a dated source and says "may apply"; the app never
+promises a credit will work and never redeems on the user's behalf.
+Benefits change often, so the agent must search, not recall.
+
 ## 12. Open questions
 
-1. Which web search tool does the research agent use (Anthropic's built-in
-   web search tool vs. a third-party search API)? Affects cost and citation
-   quality.
-2. Should intake allow zero follow-up questions and always produce a skeleton
+1. Should intake allow zero follow-up questions and always produce a skeleton
    with editable placeholders instead?
-3. Share-link privacy: is an unguessable slug enough, or do travelers need
-   a passcode?
-4. Should accepted candidates keep a link back to their Candidate row (for
+2. Should accepted candidates keep a link back to their Candidate row (for
    "why did we pick this?") — proposed yes via `Gap.resolved_by_id`.
-5. How many candidates per job: fixed 3–5, or user-adjustable?
+3. How many candidates per job: fixed 3–5, or user-adjustable?
+
+Resolved: web search provider (section 6) and share-link privacy (section
+5.6), both 2026-09-16.
