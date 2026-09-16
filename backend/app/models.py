@@ -41,6 +41,8 @@ class Trip(SQLModel, table=True):
     start_date: date | None = None
     end_date: date | None = None
     home_base_note: str = ""
+    travelers: int | None = None
+    interests: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     status: str = "dreaming"  # dreaming | planning | booked | done
     share_slug: str | None = Field(default=None, index=True, unique=True)
     created_at: datetime = Field(default_factory=utcnow)
@@ -59,7 +61,7 @@ class Place(SQLModel, table=True):
     id: str = Field(default_factory=new_id, primary_key=True)
     trip_id: str = Field(foreign_key="trips.id", index=True)
     name: str
-    kind: str = "other"  # lodging|food|coffee|sight|shop|station|airport|neighborhood|other
+    kind: str = "other"  # city|lodging|food|coffee|sight|shop|station|airport|neighborhood|other
     lat: float | None = None
     lng: float | None = None
     precision: str = "unknown"  # exact | approximate | unknown

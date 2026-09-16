@@ -82,3 +82,43 @@ export function formatDateRange(start: string | null, end: string | null): strin
   }
   return `${fmt(s, { month: "short", day: "numeric" })} – ${fmt(e, { month: "short", day: "numeric" })}, ${e.getFullYear()}`;
 }
+
+export type DraftDay = { base_city: string; title: string; summary: string };
+
+export type TripDraft = {
+  title: string;
+  destinations: string[];
+  start_date: string | null;
+  travelers: number | null;
+  interests: string[];
+  days: DraftDay[];
+};
+
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  kind?: "question" | "draft";
+};
+
+export type IntakeTurnResponse = {
+  reply: string;
+  kind: "question" | "draft";
+  draft: TripDraft | null;
+};
+
+/** Add n days to a YYYY-MM-DD string and format like "Sat, May 1". */
+export function dayLabel(startIso: string | null, offset: number): string {
+  if (!startIso) return `Day ${offset + 1}`;
+  const [y, m, d] = startIso.split("-").map(Number);
+  const date = new Date(y, m - 1, d + offset);
+  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+export type DayOut = {
+  id: string;
+  date: string;
+  title: string;
+  summary: string;
+  base_city: string | null;
+  open_gap_count: number;
+};

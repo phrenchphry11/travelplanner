@@ -51,7 +51,7 @@ class TripOut(BaseModel):
     open_gap_count: int = 0
 
 
-def _to_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
+def to_trip_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
     return TripOut(
         id=trip.id,
         title=trip.title,
@@ -96,7 +96,7 @@ def list_trips(
         )
     )
     counts = _open_gap_counts(session, [t.id for t in trips])
-    return [_to_out(t, counts.get(t.id, 0)) for t in trips]
+    return [to_trip_out(t, counts.get(t.id, 0)) for t in trips]
 
 
 @router.post("", response_model=TripOut, status_code=status.HTTP_201_CREATED)
@@ -110,7 +110,7 @@ def create_trip(
     session.add(TripMember(trip_id=trip.id, user_id=user.id, role="owner"))
     session.commit()
     session.refresh(trip)
-    return _to_out(trip)
+    return to_trip_out(trip)
 
 
 @router.get("/{trip_id}", response_model=TripOut)
@@ -120,7 +120,7 @@ def get_trip(
     session: Session = Depends(get_session),
 ) -> TripOut:
     trip = get_member_trip(session, trip_id, user)
-    return _to_out(trip, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
+    return to_trip_out(trip, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
 
 
 @router.delete("/{trip_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -139,3 +139,41 @@ def delete_trip(
     session.flush()
     session.delete(trip)
     session.commit()
+
+
+class DayOut(BaseModel):
+    id: str
+    date: date
+    title: str
+    summary: str
+    base_city: str | None
+    open_gap_count: int
+
+
+@router.get("/{trip_id}/days", response_model=list[DayOut])
+def list_days(
+    trip_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> list[DayOut]:
+    trip = get_member_trip(session, trip_id, user)
+    days = session.exec(select(Day).where(Day.trip_id == trip.id).order_by(Day.date)).all()
+    places = {p.id: p.name for p in session.exec(select(Place).where(Place.trip_id == trip.id))}
+    gap_counts = dict(
+        session.exec(
+            select(Gap.day_id, func.count())
+            .where(Gap.trip_id == trip.id, Gap.status.in_(("open", "researching")))
+            .group_by(Gap.day_id)
+        ).all()
+    )
+    return [
+        DayOut(
+            id=d.id,
+            date=d.date,
+            title=d.title,
+            summary=d.summary,
+            base_city=places.get(d.base_place_id) if d.base_place_id else None,
+            open_gap_count=gap_counts.get(d.id, 0),
+        )
+        for d in days
+    ]

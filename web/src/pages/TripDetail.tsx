@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import TopBar from "../components/TopBar";
-import { ApiError, formatDateRange, STATUS_LABELS, useApi, type Trip } from "../lib/api";
+import { ApiError, dayLabel, formatDateRange, STATUS_LABELS, useApi, type DayOut, type Trip } from "../lib/api";
 
 /** Placeholder until the planning board epic (travelplanner-7lr). */
 export default function TripDetail() {
@@ -9,13 +9,18 @@ export default function TripDetail() {
   const api = useApi();
   const navigate = useNavigate();
   const [trip, setTrip] = useState<Trip | null>(null);
+  const [days, setDays] = useState<DayOut[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    api<Trip>(`/trips/${tripId}`)
-      .then((data) => !cancelled && setTrip(data))
+    Promise.all([api<Trip>(`/trips/${tripId}`), api<DayOut[]>(`/trips/${tripId}/days`)])
+      .then(([t, d]) => {
+        if (cancelled) return;
+        setTrip(t);
+        setDays(d);
+      })
       .catch((e: Error) => {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 404) setNotFound(true);
@@ -54,9 +59,27 @@ export default function TripDetail() {
               <p className="muted">{formatDateRange(trip.start_date, trip.end_date)}</p>
             </div>
           </div>
-          <section className="empty">
-            <p>The planning board for this trip is coming soon.</p>
-          </section>
+          {days.length > 0 ? (
+            <ol className="day-summary">
+              {days.map((d, i) => (
+                <li key={d.id}>
+                  <span className="day-date">{dayLabel(trip.start_date, i)}</span>
+                  <span>
+                    <strong>{d.title}</strong>
+                    {d.base_city && d.base_city !== d.title && <span className="muted"> · {d.base_city}</span>}
+                  </span>
+                  <span className={d.open_gap_count > 0 ? "gaps has-gaps" : "gaps"}>
+                    {d.open_gap_count > 0 ? `${d.open_gap_count} to fill` : "All set"}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <section className="empty">
+              <p>This trip has no days yet.</p>
+            </section>
+          )}
+          <p className="muted small">The map and planning board for this trip are coming next.</p>
           <p>
             <button className="danger" onClick={onDelete}>
               Delete trip

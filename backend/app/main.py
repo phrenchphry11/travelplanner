@@ -1,9 +1,12 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import health, me, trips
+from app.routers import health, intake, me, trips
 
+logging.basicConfig(level=logging.INFO)
 settings = get_settings()
 
 app = FastAPI(title="Trip Planner API", version="0.1.0")
@@ -19,3 +22,4 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(me.router)
 app.include_router(trips.router)
+app.include_router(intake.router)

@@ -91,8 +91,18 @@ conversation rather than in a new page, so the user can keep talking to
 adjust it. States: typing, agent thinking, follow-up question, skeleton ready.
 
 ### 5.3 Skeleton confirmation
-Editable table of days: date, base city, title. Inline edit, drag to reorder,
+Editable table of days: date, base city, title. Inline edit, reorder,
 add/remove day. *Confirm* button. Cancel returns to intake with context kept.
+
+Implemented 2026-09-16:
+- The editor sits under the chat on the same page. Chatting again sends the
+  edited draft back so hand edits are kept.
+- A first day is required to confirm. The agent leaves it blank when the
+  traveler only gave a month; day dates follow from it.
+- Confirm creates the Trip (status *planning*), one Day per row, one city
+  Place per distinct base city, and starter gaps: one lodging gap per
+  consecutive stay (last day treated as departure, no night) and one
+  activity gap per day.
 
 ### 5.4 Planning board
 Layout mirrors the TDF planner: map column, sidebar with day jump and layer

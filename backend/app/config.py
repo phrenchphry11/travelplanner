@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     clerk_jwks_url: str = ""
     cors_origins: str = "http://localhost:5173"
     anthropic_api_key: str = ""
+    intake_model: str = "claude-opus-5"
     worker_poll_seconds: float = 3.0
 
     @property
