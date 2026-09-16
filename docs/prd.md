@@ -1,0 +1,235 @@
+# Trip Planner — Product Requirements
+
+Draft 1, 2026-09-16. Companion to [data-model.md](./data-model.md).
+
+## 1. Summary
+
+A web app that takes a rough trip idea, turns it into a day-by-day skeleton,
+finds the missing pieces (where to sleep, what to do), and produces a polished,
+shareable itinerary with a map. An AI research agent does the legwork; the user
+makes every decision.
+
+It generalizes the static Tour de France planner Holly and Scott built
+(brenstuhl.com/tdf) into a product for other people: multiple trips, multiple
+users, edited in the app instead of in files, and not tied to any one kind of
+trip.
+
+## 2. Goals and non-goals
+
+**Goals (v1)**
+- A non-technical user gets from "I'm thinking about Portugal in May" to a
+  shareable itinerary link without help and without touching a file.
+- The agent proposes; the user picks. Nothing is added to the plan without an
+  explicit accept.
+- Every agent suggestion carries sources so the user can check it.
+- Per-trip agent cost is tracked so a future paid tier can be priced.
+
+**Non-goals (v1)**
+- Booking or payments. We link out; we never take money.
+- Transit research (v1.1). Transit legs can be added manually.
+- Collaborators / invited editors (v1.1).
+- Event anchors (races, festivals, weddings). Later.
+- Budgets, expense tracking, media uploads, version history.
+- Real-time availability or pricing from booking APIs.
+
+## 3. Users
+
+| Persona | Who | Device | v1? |
+|---|---|---|---|
+| Planner | Organizes the trip. Comfortable with a browser, not with spreadsheets or files. | Desktop / laptop | Yes |
+| Traveler | Goes on the trip. Opens the shared link on the road. | Phone | Yes (read-only) |
+| Co-planner | Invited to edit the same trip. | Desktop | v1.1 |
+
+## 4. User journey
+
+Worked example throughout: **"Portugal, 10 days in May, two of us, we like food,
+wine, and walking. Fly into Lisbon."**
+
+1. **Sign in.** Clerk with Google sign-in. Lands on the trip list (empty on first
+   visit) with one button: *Start a trip*.
+2. **Intake.** One text box: *"Tell me about the trip you're thinking about."*
+   The user types the example above. The agent extracts destination(s),
+   dates or duration, traveler count, and interests. If something essential is
+   missing (dates, for example) it asks at most two follow-up questions in the
+   same conversational panel. It never asks for anything it can default.
+3. **Skeleton.** The app shows a proposed day list: 10 rows, each with a date,
+   a base city, and a one-line title ("Arrive Lisbon", "Lisbon", "Day trip to
+   Sintra", "Train to Porto", ...). The user can rename, reorder base cities,
+   add or delete days, or say "make it 12 days" in the intake box. *Confirm*
+   creates the Trip and Days.
+4. **Planning board.** Map on the left with a pin per base city. Day selector
+   and the selected day's timeline on the right. Tabs: Overview, Day, Lodging,
+   Activities (Transit tab appears in v1.1). Every day has slots. Empty slots
+   are gaps and say what is missing: *"No lodging in Porto yet"*,
+   *"Nothing planned for the afternoon"*.
+5. **Fill a gap.** Click a gap → *Find options*. A research job is queued; the
+   slot shows *"Looking..."* with progress. Within a couple of minutes, 3–5
+   candidate cards arrive.
+6. **Review candidates.** Cards sit side by side: name, one-line summary,
+   price range if known, pros, cons, confidence, map pin, and source links.
+   Actions per card: *Choose*, *Not this one* (optional reason), and a
+   panel-level *Find more like...* with a free-text nudge ("closer to the
+   river", "cheaper"). Choosing turns the candidate into a plan item: it
+   appears on the timeline and on the map.
+7. **Repeat** until the Overview tab shows no open gaps. The user can also add
+   items manually at any time, and edit anything the agent produced.
+8. **Share.** *Publish* creates a read-only link. The Traveler opens it on a
+   phone and sees the itinerary: day-by-day, map, where we're sleeping, what's
+   planned, with links out to maps and bookings.
+
+## 5. Screens
+
+### 5.1 Trip list
+Cards for each trip with title, dates, status (dreaming / planning / booked /
+done), and open-gap count. *Start a trip* button. Empty state explains what
+the app does in two sentences.
+
+### 5.2 Intake conversation
+Single-column chat panel. First message is the prompt. Agent replies are
+short. When it has enough, it says so and shows the skeleton beneath the
+conversation rather than in a new page, so the user can keep talking to
+adjust it. States: typing, agent thinking, follow-up question, skeleton ready.
+
+### 5.3 Skeleton confirmation
+Editable table of days: date, base city, title. Inline edit, drag to reorder,
+add/remove day. *Confirm* button. Cancel returns to intake with context kept.
+
+### 5.4 Planning board
+Layout mirrors the TDF planner: map column, sidebar with day jump and layer
+toggles, detail band with tabs.
+
+- **Overview tab**: whole-trip map, all lodging and activities, and a *What's
+  still missing* list of open gaps linking into their days.
+- **Day tab**: timeline for the selected day. Slots in order: morning,
+  afternoon, evening, lodging. Filled slots show the plan item; empty ones
+  show the gap with a *Find options* button and an *Add manually* link.
+- **Lodging tab**: one row per stay across the trip with dates, status, link.
+- **Activities tab**: table of all activities with day, kind, status.
+- Map layers: lodging, food, sights, other; toggle per layer.
+- Editing: click any item to open a side drawer with its fields.
+
+### 5.5 Gap detail and candidate comparison (the inbox)
+Opens as a drawer over the board so the map stays visible. Header restates
+the gap in plain words. Body is a horizontal row of candidate cards (see
+journey step 6). Hovering a card highlights its pin. Rejected cards collapse
+into a *Rejected (2)* footer that can be expanded. If no job has run, the
+drawer shows the *Find options* button and an *Add manually* form. If a job
+failed, it says so and offers retry. Users never see JSON, ids, or model
+names.
+
+### 5.6 Shared itinerary (public)
+Mobile-first. Vertical day list; tapping a day expands its timeline. Sticky
+map at the top that recenters on the expanded day. Each item links out
+(Google Maps, booking site). No editing, no sign-in required, no agent
+controls. Unpublish removes the link.
+
+## 6. Agent behavior
+
+**Intake agent** (synchronous, in the API): parses free text into a structured
+trip draft (destinations, dates, travelers, interests) and a day skeleton.
+Asks at most two clarifying questions. Deterministic defaults where possible
+(e.g. missing dates → "10 days starting on a placeholder date, editable").
+
+**Research agent** (asynchronous, in the worker): given a Gap and trip context,
+runs a bounded loop of web searches, reads results, and writes 3–5 Candidate
+rows.
+
+Inputs: trip summary, day context (date, base city, neighbouring days),
+gap kind and prompt, user interests, any *Find more* nudge, list of already
+rejected candidates and their reasons.
+
+Outputs: Candidate rows with summary, pros, cons, confidence, a Place with
+coordinates (marked approximate if geocoded from an address by the model),
+price range if found, and one or more Sources per candidate.
+
+Guardrails:
+- Every factual claim on a card must have a source; unsourced facts are
+  labelled *unverified*.
+- Never auto-accept. Never modify plan items.
+- Hard cap on searches and tokens per job. Cost recorded on ResearchJob.
+- Don't repeat rejected candidates for the same gap.
+- Timeout with partial results rather than nothing.
+
+## 7. Data model
+
+See [data-model.md](./data-model.md). One-line summary of entities:
+
+| Entity | Role |
+|---|---|
+| Trip, Day | The plan's spine |
+| Place | Anything with a location; shared by all pins |
+| Lodging, Activity, Transit | Plan items (Transit manual-only in v1) |
+| Gap | An open question; the unit of agent work |
+| Candidate | An agent proposal for a gap |
+| Source | Citation on any record |
+| ResearchJob | One agent run, with status and cost |
+
+## 8. Architecture
+
+Render, one `render.yaml` blueprint:
+
+| Service | Type | Notes |
+|---|---|---|
+| web | Static site | React + Vite + TypeScript, React Router, Leaflet |
+| api | Web service | FastAPI + uvicorn. Auth via Clerk JWT. Serves the public share link too |
+| worker | Background worker | Python. Polls a `research_jobs` table (Postgres-backed queue, no Redis in v1). Runs the research agent with the Anthropic SDK |
+| db | Postgres | SQLModel / SQLAlchemy + Alembic migrations |
+
+Share links: a random slug token on the Trip. `GET /share/{slug}` returns the
+public itinerary payload; the web app renders it without sign-in.
+
+Starter tier on api and worker so nothing sleeps.
+
+## 9. Non-functional requirements
+
+- Planning board works on desktop and tablet. Shared itinerary is mobile-first.
+- *Find options* gives visible feedback within 2 seconds and results within
+  ~2 minutes; jobs can run longer without blocking the UI.
+- Per-trip and per-job agent cost stored and visible on an internal admin view.
+- No raw JSON, ids, or model internals in user-facing UI.
+- Keyboard-navigable forms, sufficient contrast, alt text on map controls.
+- Data isolation: a user only ever reads trips they own (v1) or are a member
+  of (v1.1). Share links expose only published trips.
+
+## 10. Scope
+
+| Capability | v1 | v1.1 | Later |
+|---|---|---|---|
+| Sign in, trip list | ✓ | | |
+| Conversational intake + skeleton | ✓ | | |
+| Planning board with map and day timeline | ✓ | | |
+| Gaps and agent research for lodging | ✓ | | |
+| Gaps and agent research for activities | ✓ | | |
+| Candidate comparison drawer | ✓ | | |
+| Manual add/edit of lodging, activities, places | ✓ | | |
+| Public share link, mobile-first | ✓ | | |
+| Cost tracking per job | ✓ | | |
+| Transit legs (manual) | ✓ | | |
+| Transit research | | ✓ | |
+| Invite editors | | ✓ | |
+| User-pasted links → candidates | | ✓ | |
+| Event anchors (races, festivals) | | | ✓ |
+| Structured place data (Google Places) | | | ✓ |
+| Calendar export, PDF | | | ✓ |
+| Paid tier / credits | | | ✓ |
+
+## 11. Success criteria
+
+- One invited, non-technical user completes a real upcoming trip from intake
+  to a shared link with no help from Holly.
+- They accept at least one agent candidate for lodging and one for an activity.
+- Agent cost per trip is known and under a target to be set after the first
+  three trips.
+
+## 12. Open questions
+
+1. Which web search tool does the research agent use (Anthropic's built-in
+   web search tool vs. a third-party search API)? Affects cost and citation
+   quality.
+2. Should intake allow zero follow-up questions and always produce a skeleton
+   with editable placeholders instead?
+3. Share-link privacy: is an unguessable slug enough, or do travelers need
+   a passcode?
+4. Should accepted candidates keep a link back to their Candidate row (for
+   "why did we pick this?") — proposed yes via `Gap.resolved_by_id`.
+5. How many candidates per job: fixed 3–5, or user-adjustable?
