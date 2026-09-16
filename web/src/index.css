@@ -141,3 +141,20 @@ button.icon { padding: 6px 10px; background: transparent; color: var(--ink); bor
   .row-button { grid-template-columns: 1fr auto; }
   .row-button .day-date { grid-column: 1 / -1; }
 }
+
+/* Candidate previews */
+.gap-slot.has-options { border-style: solid; background: #fff; }
+.candidate-list { display: grid; gap: 10px; margin: 8px 0 12px; }
+.candidate-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fff; }
+.candidate-card header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.candidate-card h5 { font-size: 1rem; margin: 0; }
+.candidate-card p { margin: 4px 0; }
+.confidence { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.confidence-high { background: #e2f1e6; color: #2f6f43; }
+.confidence-medium { background: #e3ecf6; color: #2f5a88; }
+.confidence-low { background: #f7ead6; color: var(--warn); }
+.pros-cons { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 2px; font-size: 0.9rem; }
+.pros-cons li::before { display: inline-block; width: 1.1em; font-weight: 700; }
+.pros-cons .pro::before { content: "+"; color: #2f6f43; }
+.pros-cons .con::before { content: "−"; color: var(--warn); }
+.candidate-card footer { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }

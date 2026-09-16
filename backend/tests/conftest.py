@@ -14,6 +14,19 @@ from app.main import app
 from app.models import User
 
 
+@pytest.fixture(autouse=True)
+def no_real_anthropic_calls(monkeypatch):
+    """Tests must never spend money. Any code path that reaches a real
+    Anthropic client fails immediately; tests inject fakes instead."""
+    from app.agents import intake, research
+
+    def _blocked():
+        raise RuntimeError("Tests must not call the real Anthropic API; inject a fake runner or client.")
+
+    monkeypatch.setattr(intake, "_client", _blocked)
+    monkeypatch.setattr(research, "_client", _blocked)
+
+
 @pytest.fixture
 def engine():
     """In-memory SQLite by default. Set TEST_DATABASE_URL to run against Postgres,

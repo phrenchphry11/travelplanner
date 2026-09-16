@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     authorized_parties: str = ""
     anthropic_api_key: str = ""
     intake_model: str = "claude-opus-5"
+    research_model: str = "claude-opus-5"
+    research_effort: str = "medium"
+    research_max_searches_per_request: int = 8
+    research_max_turns: int = 4
+    # Estimated USD per million tokens / per search, for ResearchJob.cost_usd.
+    # Claude Opus 5 list prices; fallback-model turns are billed at their own rates.
+    price_input_per_mtok: float = 5.0
+    price_output_per_mtok: float = 25.0
+    price_cache_write_per_mtok: float = 6.25
+    price_cache_read_per_mtok: float = 0.5
+    price_per_search: float = 0.01
     # OpenStreetMap Nominatim. Policy: https://operations.osmfoundation.org/policies/nominatim/
     # Max 1 req/s, identifying User-Agent, cache results. Swap the URL to change provider.
     nominatim_url: str = "https://nominatim.openstreetmap.org"

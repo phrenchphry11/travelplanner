@@ -3,13 +3,13 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator, needs_lookup
-from app.models import Activity, Day, Gap, Lodging, Place, ResearchJob, TripMember, User
+from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, TripMember, User
 from app.routers.trips import TripOut, get_member_trip, to_trip_out
 
 router = APIRouter(tags=["board"])
@@ -42,6 +42,31 @@ class BoardJob(BaseModel):
     error: str
 
 
+class BoardSource(BaseModel):
+    title: str
+    url: str
+    note: str
+
+
+class BoardCandidate(BaseModel):
+    id: str
+    name: str
+    summary: str
+    pros: list[str]
+    cons: list[str]
+    confidence: str
+    unverified: bool
+    price_range: str | None
+    address: str | None
+    neighborhood: str | None
+    website_url: str | None
+    booking_url: str | None
+    activity_kind: str | None
+    best_time: str | None
+    place_id: str | None
+    sources: list[BoardSource]
+
+
 class BoardGap(BaseModel):
     id: str
     day_id: str | None
@@ -51,6 +76,7 @@ class BoardGap(BaseModel):
     # Lodging gaps: the days whose night this stay covers. Others: just their day.
     covers_day_ids: list[str]
     job: BoardJob | None
+    candidates: list[BoardCandidate]  # proposed options waiting for review
 
 
 class BoardLodging(BaseModel):
@@ -122,6 +148,17 @@ def get_board(
     ):
         jobs[job.gap_id] = job
 
+    candidates_by_gap: dict[str, list[Candidate]] = {}
+    for c in session.exec(
+        select(Candidate)
+        .where(Candidate.trip_id == trip.id, Candidate.status == "proposed")
+        .order_by(Candidate.created_at)
+    ):
+        candidates_by_gap.setdefault(c.gap_id, []).append(c)
+    sources_by_candidate: dict[str, list[Source]] = {}
+    for src in session.exec(select(Source).where(Source.trip_id == trip.id, Source.subject_kind == "candidate")):
+        sources_by_candidate.setdefault(src.subject_id, []).append(src)
+
     pending_lookup = [p for p in places if needs_lookup(p)]
     if pending_lookup:
         background.add_task(locate, trip.id)
@@ -146,6 +183,7 @@ def get_board(
                 status=g.status,
                 covers_day_ids=_lodging_coverage(g, days) if g.kind == "lodging" else ([g.day_id] if g.day_id else []),
                 job=BoardJob(id=jobs[g.id].id, status=jobs[g.id].status, error=jobs[g.id].error) if g.id in jobs else None,
+                candidates=[_candidate_out(c, sources_by_candidate.get(c.id, [])) for c in candidates_by_gap.get(g.id, [])],
             )
             for g in gaps
         ],
@@ -159,6 +197,28 @@ def get_board(
                           start_time=a.start_time, status=a.status)
             for a in activities
         ],
+    )
+
+
+def _candidate_out(c: Candidate, sources: list[Source]) -> BoardCandidate:
+    p = c.payload or {}
+    return BoardCandidate(
+        id=c.id,
+        name=p.get("name", ""),
+        summary=c.summary,
+        pros=c.pros or [],
+        cons=c.cons or [],
+        confidence=c.confidence,
+        unverified=bool(p.get("unverified")),
+        price_range=p.get("price_range"),
+        address=p.get("address"),
+        neighborhood=p.get("neighborhood"),
+        website_url=p.get("website_url"),
+        booking_url=p.get("booking_url"),
+        activity_kind=p.get("activity_kind"),
+        best_time=p.get("best_time"),
+        place_id=c.place_id,
+        sources=[BoardSource(title=s.title, url=s.url, note=s.note) for s in sources],
     )
 
 
@@ -179,9 +239,14 @@ class JobOut(BaseModel):
     error: str
 
 
+class ResearchRequest(BaseModel):
+    nudge: str = Field(default="", max_length=500)
+
+
 @router.post("/gaps/{gap_id}/research", response_model=JobOut, status_code=status.HTTP_202_ACCEPTED)
 def start_research(
     gap_id: str,
+    body: ResearchRequest | None = None,
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> JobOut:
@@ -194,7 +259,7 @@ def start_research(
     active = session.exec(
         select(ResearchJob).where(ResearchJob.gap_id == gap.id, ResearchJob.status.in_(ACTIVE_JOB_STATUSES))
     ).first()
-    job = active or ResearchJob(trip_id=gap.trip_id, gap_id=gap.id)
+    job = active or ResearchJob(trip_id=gap.trip_id, gap_id=gap.id, nudge=(body.nudge.strip() if body else ""))
     if active is None:
         session.add(job)
     gap.status = "researching"

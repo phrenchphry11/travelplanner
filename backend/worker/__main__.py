@@ -1,30 +1,58 @@
 """Research worker.
 
-Polls the research_jobs table for queued jobs and runs them one at a time.
-The actual research agent lands in the "Research worker and job queue" epic;
-for now a claimed job is marked done immediately so the loop and Render
-service can be verified end to end.
+Polls the research_jobs table and runs one job at a time: builds context for
+the job's gap, asks the research agent for options, and saves them as
+Candidate, Place, and Source rows. Several workers can run safely; jobs are
+claimed with a compare-and-set.
 """
 from __future__ import annotations
 
 import logging
 import signal
 import time
+from datetime import timedelta
 
-from sqlalchemy import update
+from sqlalchemy import or_, update
 from sqlmodel import Session, select
 
+from app.agents.research import CandidateIn, ResearchContext, ResearchError, ResearchRunner, research_gap
 from app.config import get_settings
 from app.db import engine
-from app.models import Gap, ResearchJob, utcnow
+from app.models import Candidate, Day, Gap, Place, ResearchJob, Source, Trip, utcnow
 
 log = logging.getLogger("worker")
 _running = True
+
+STALE_AFTER = timedelta(minutes=15)
+MAX_ATTEMPTS = 2
+NEARBY_DAYS = 2
+
+ACTIVITY_PLACE_KIND = {"meal": "food", "sight": "sight", "tour": "sight", "outdoors": "sight", "shopping": "shop"}
 
 
 def _stop(*_args) -> None:
     global _running
     _running = False
+
+
+def recover_stale_jobs(session: Session) -> None:
+    """Requeue jobs left 'running' by a crashed worker, or fail them after MAX_ATTEMPTS."""
+    cutoff = utcnow() - STALE_AFTER
+    stale = session.exec(
+        select(ResearchJob).where(
+            ResearchJob.status == "running",
+            or_(ResearchJob.started_at.is_(None), ResearchJob.started_at < cutoff),
+        )
+    ).all()
+    for job in stale:
+        if job.attempts >= MAX_ATTEMPTS:
+            log.warning("job %s stuck after %d attempts; failing", job.id, job.attempts)
+            _fail(session, job, "Finding options took too long. Try again.")
+        else:
+            log.warning("job %s stuck; requeueing", job.id)
+            job.status = "queued"
+            session.add(job)
+            session.commit()
 
 
 def claim_job(session: Session) -> ResearchJob | None:
@@ -49,12 +77,98 @@ def claim_job(session: Session) -> ResearchJob | None:
     return job
 
 
-def run_job(session: Session, job: ResearchJob) -> None:
-    log.info("running job %s for gap %s", job.id, job.gap_id)
-    # TODO(travelplanner-jdm): research agent goes here. Until then, fail the
-    # job with a plain message and reopen the gap so the board shows it clearly.
+def build_context(session: Session, job: ResearchJob) -> ResearchContext:
+    gap = session.get(Gap, job.gap_id)
+    trip = session.get(Trip, job.trip_id)
+    if gap is None or trip is None:
+        raise ResearchError("This item no longer exists.")
+
+    days = list(session.exec(select(Day).where(Day.trip_id == trip.id).order_by(Day.date)))
+    places = {p.id: p.name for p in session.exec(select(Place).where(Place.trip_id == trip.id, Place.kind == "city"))}
+    day = next((d for d in days if d.id == gap.day_id), None)
+
+    nearby: list[str] = []
+    if day is not None:
+        i = days.index(day)
+        for d in days[max(0, i - NEARBY_DAYS) : i + NEARBY_DAYS + 1]:
+            city = places.get(d.base_place_id or "", "")
+            nearby.append(f"{d.date:%a %b} {d.date.day}: {d.title}" + (f" ({city})" if city and city != d.title else ""))
+
+    previous = list(session.exec(select(Candidate).where(Candidate.gap_id == gap.id)))
+    return ResearchContext(
+        trip_title=trip.title,
+        destinations=list(trip.destinations or []),
+        interests=list(trip.interests or []),
+        travelers=trip.travelers,
+        trip_start=trip.start_date,
+        trip_end=trip.end_date,
+        gap_kind=gap.kind,
+        gap_prompt=gap.prompt,
+        day_date=day.date if day else None,
+        base_city=places.get(day.base_place_id or "") if day else None,
+        nearby_days=nearby,
+        nudge=job.nudge,
+        already_suggested=[c.payload.get("name", "") for c in previous if c.status != "rejected" and c.payload.get("name")],
+        rejected=[(c.payload.get("name", ""), c.rejection_reason) for c in previous if c.status == "rejected"],
+    )
+
+
+def _place_kind(gap_kind: str, c: CandidateIn) -> str:
+    if gap_kind == "lodging":
+        return "lodging"
+    return ACTIVITY_PLACE_KIND.get(c.activity_kind or "", "other")
+
+
+def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: list[CandidateIn]) -> None:
+    now = utcnow()
+    for c in candidates:
+        place = Place(
+            trip_id=job.trip_id,
+            name=c.name,
+            kind=_place_kind(gap.kind, c),
+            lat=c.lat,
+            lng=c.lng,
+            precision="approximate" if c.lat is not None and c.lng is not None else "unknown",
+            address=c.address or "",
+            website_url=c.website_url or "",
+            summary=c.summary,
+            geocoded_at=now,  # candidate places aren't city lookups; never geocode them
+        )
+        session.add(place)
+        session.flush()  # place before the candidate that references it
+
+        candidate = Candidate(
+            trip_id=job.trip_id,
+            gap_id=gap.id,
+            target_kind=gap.kind if gap.kind in ("lodging", "transit", "activity") else "place",
+            payload=c.model_dump(exclude={"sources", "pros", "cons", "summary", "confidence"}),
+            place_id=place.id,
+            summary=c.summary,
+            pros=c.pros,
+            cons=c.cons,
+            confidence=c.confidence,
+            created_by="agent",
+        )
+        session.add(candidate)
+        session.flush()  # candidate before its sources
+
+        for s in c.sources:
+            session.add(Source(
+                trip_id=job.trip_id,
+                subject_kind="candidate",
+                subject_id=candidate.id,
+                title=s.title,
+                url=s.url,
+                note=s.note,
+                fetched_at=now,
+            ))
+
+
+def _fail(session: Session, job: ResearchJob, message: str) -> None:
+    session.rollback()
+    job = session.get(ResearchJob, job.id)
     job.status = "failed"
-    job.error = "Finding options isn't available yet."
+    job.error = message
     job.finished_at = utcnow()
     gap = session.get(Gap, job.gap_id)
     if gap is not None and gap.status == "researching":
@@ -64,27 +178,62 @@ def run_job(session: Session, job: ResearchJob) -> None:
     session.commit()
 
 
+def run_job(session: Session, job: ResearchJob, runner: ResearchRunner = research_gap) -> None:
+    log.info("running job %s for gap %s (attempt %d)", job.id, job.gap_id, job.attempts)
+    try:
+        ctx = build_context(session, job)
+        result = runner(ctx)
+    except ResearchError as exc:
+        _fail(session, job, str(exc))
+        return
+
+    gap = session.get(Gap, job.gap_id)
+    job.input_tokens = result.usage.input_tokens
+    job.output_tokens = result.usage.output_tokens
+    job.search_count = result.usage.searches
+    job.cost_usd = result.usage.cost_usd()
+
+    if not result.candidates:
+        job.status = "failed"
+        job.error = "We couldn't find good options this time. Try again."
+    else:
+        save_candidates(session, job, gap, result.candidates)
+        job.status = "done"
+        job.error = ""
+    job.finished_at = utcnow()
+    if gap.status == "researching":
+        gap.status = "open"  # open with options waiting to be reviewed
+        session.add(gap)
+    session.add(job)
+    session.commit()
+    log.info(
+        "job %s %s: %d candidates, %d searches, ~$%.3f",
+        job.id, job.status, len(result.candidates), job.search_count, job.cost_usd,
+    )
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
     poll = get_settings().worker_poll_seconds
     log.info("worker started, polling every %.1fs", poll)
+    last_recovery = 0.0
     while _running:
         with Session(engine) as session:
+            if time.monotonic() - last_recovery > 60:
+                recover_stale_jobs(session)
+                last_recovery = time.monotonic()
             job = claim_job(session)
             if job is None:
                 time.sleep(poll)
                 continue
             try:
                 run_job(session, job)
-            except Exception as exc:  # noqa: BLE001
-                log.exception("job %s failed", job.id)
-                job.status = "failed"
-                job.error = str(exc)[:2000]
-                job.finished_at = utcnow()
-                session.add(job)
-                session.commit()
+            except Exception:  # noqa: BLE001
+                log.exception("job %s crashed", job.id)
+                _fail(session, job, "Something went wrong while finding options. Try again.")
     log.info("worker stopped")
 
 

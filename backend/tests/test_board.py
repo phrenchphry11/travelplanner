@@ -1,9 +1,6 @@
-from sqlmodel import Session
-
 from app.geocoding import get_trip_locator
 from app.main import app
 from app.models import Gap
-from worker.__main__ import claim_job, run_job
 
 CITIES = ["Lisbon", "Lisbon", "Porto", "Porto"]
 
@@ -84,23 +81,3 @@ def test_start_research_rejects_strangers_and_filled_gaps(make_client, session):
     session.add(gap)
     session.commit()
     assert owner.post(f"/gaps/{gap_id}/research").status_code == 409
-
-
-def test_worker_stub_fails_job_and_reopens_gap(make_client, engine):
-    client = make_client()
-    trip_id = _confirm(client)
-    gap_id = client.get(f"/trips/{trip_id}/board").json()["gaps"][0]["id"]
-    client.post(f"/gaps/{gap_id}/research")
-
-    with Session(engine) as s:
-        job = claim_job(s)
-        assert job is not None and job.status == "running"
-        job_id = job.id
-        run_job(s, job)
-        assert claim_job(s) is None
-
-    gap = next(g for g in client.get(f"/trips/{trip_id}/board").json()["gaps"] if g["id"] == gap_id)
-    assert gap["status"] == "open"
-    assert gap["job"] == {"id": job_id, "status": "failed", "error": "Finding options isn't available yet."}
-    # Can try again after a failure.
-    assert client.post(f"/gaps/{gap_id}/research").json()["id"] != job_id

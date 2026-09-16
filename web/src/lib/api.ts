@@ -134,6 +134,26 @@ export type BoardPlace = {
   locating: boolean;
 };
 export type BoardJob = { id: string; status: "queued" | "running" | "done" | "failed"; error: string };
+export type BoardSource = { title: string; url: string; note: string };
+export type BoardCandidate = {
+  id: string;
+  name: string;
+  summary: string;
+  pros: string[];
+  cons: string[];
+  confidence: "low" | "medium" | "high";
+  unverified: boolean;
+  price_range: string | null;
+  address: string | null;
+  neighborhood: string | null;
+  website_url: string | null;
+  booking_url: string | null;
+  activity_kind: string | null;
+  best_time: string | null;
+  place_id: string | null;
+  sources: BoardSource[];
+};
+
 export type BoardGap = {
   id: string;
   day_id: string | null;
@@ -142,6 +162,7 @@ export type BoardGap = {
   status: "open" | "researching" | "answered" | "dismissed";
   covers_day_ids: string[];
   job: BoardJob | null;
+  candidates: BoardCandidate[];
 };
 export type BoardLodging = { id: string; place_id: string; check_in: string; check_out: string; status: string; booking_url: string };
 export type BoardActivity = { id: string; day_id: string; name: string; kind: string; place_id: string | null; start_time: string; status: string };
