@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "travelplanner",
+  "project_id": "880d9c32-2d97-4b15-85d2-390f3edd8f3b"
+}
