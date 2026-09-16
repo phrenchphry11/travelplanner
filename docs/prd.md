@@ -175,6 +175,18 @@ aggregators. Cost is $10 per 1,000 searches plus tokens for results. The
 search call is one pluggable step in the worker so a later swap to a
 third-party search API is cheap.
 
+Implemented 2026-09-16:
+- Claude Opus 5 with `web_search_20260318` and a strict `submit_candidates`
+  tool; up to 4 turns, `pause_turn` resumed automatically.
+- Sources are kept only if their URL appeared in the search results Claude
+  received. Options left with no confirmed source are shown as *Unverified*.
+- `user_location` is not set yet (it needs an ISO country code the trip
+  doesn't store). Blocked domains: pinterest.com, quora.com.
+- Cost, measured on a Lisbon lodging gap: 8 searches at medium effort was
+  ~$0.85 and ~100s; 5 searches at low effort was ~$0.33 and ~47s with
+  comparable quality. Shipped with 5 searches, low effort (env-overridable).
+  Roughly $4–5 to research every gap in a 10-day trip.
+
 Inputs: trip summary, day context (date, base city, neighbouring days),
 gap kind and prompt, user interests, any *Find more* nudge, list of already
 rejected candidates and their reasons, and (later) the user's loyalty

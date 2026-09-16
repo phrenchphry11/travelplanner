@@ -19,8 +19,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     intake_model: str = "claude-opus-5"
     research_model: str = "claude-opus-5"
-    research_effort: str = "medium"
-    research_max_searches_per_request: int = 8
+    # Tuned 2026-09-16: 8 searches at medium effort cost ~$0.85 per gap, mostly
+    # search-result input tokens. Fewer searches and low effort keep Opus 5 quality
+    # at lower cost; both are overridable via env.
+    research_effort: str = "low"
+    research_max_searches_per_request: int = 5
     research_max_turns: int = 4
     # Estimated USD per million tokens / per search, for ResearchJob.cost_usd.
     # Claude Opus 5 list prices; fallback-model turns are billed at their own rates.
