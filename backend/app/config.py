@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     clerk_issuer: str = ""
     clerk_jwks_url: str = ""
     cors_origins: str = "http://localhost:5173"
+    # Frontend origins allowed in a Clerk token's azp claim. Empty means reuse
+    # cors_origins, since the sites allowed to call the API are the same sites
+    # allowed to request tokens for it.
+    authorized_parties: str = ""
     anthropic_api_key: str = ""
     intake_model: str = "claude-opus-5"
     # OpenStreetMap Nominatim. Policy: https://operations.osmfoundation.org/policies/nominatim/
@@ -29,6 +33,11 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def authorized_party_list(self) -> list[str]:
+        raw = self.authorized_parties or self.cors_origins
+        return [o.strip().rstrip("/") for o in raw.split(",") if o.strip()]
 
 
 @lru_cache
