@@ -10,6 +10,7 @@ from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator, needs_lookup
 from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, TripMember, User
+from app.planning import lodging_coverage
 from app.routers.trips import TripOut, get_member_trip, to_trip_out
 
 router = APIRouter(tags=["board"])
@@ -34,6 +35,9 @@ class BoardPlace(BaseModel):
     lng: float | None
     precision: str
     locating: bool  # a lookup is pending or in flight
+    address: str
+    website_url: str
+    summary: str
 
 
 class BoardJob(BaseModel):
@@ -77,6 +81,15 @@ class BoardGap(BaseModel):
     covers_day_ids: list[str]
     job: BoardJob | None
     candidates: list[BoardCandidate]  # proposed options waiting for review
+    hidden: list["BoardHidden"]  # options the traveler said no to
+    resolved_by_kind: str | None  # lodging | activity, once an option is chosen
+    resolved_by_id: str | None
+
+
+class BoardHidden(BaseModel):
+    id: str
+    name: str
+    reason: str
 
 
 class BoardLodging(BaseModel):
@@ -86,6 +99,7 @@ class BoardLodging(BaseModel):
     check_out: date
     status: str
     booking_url: str
+    notes: str
 
 
 class BoardActivity(BaseModel):
@@ -96,6 +110,8 @@ class BoardActivity(BaseModel):
     place_id: str | None
     start_time: str
     status: str
+    booking_url: str
+    notes: str
 
 
 class Board(BaseModel):
@@ -105,23 +121,6 @@ class Board(BaseModel):
     gaps: list[BoardGap]
     lodgings: list[BoardLodging]
     activities: list[BoardActivity]
-
-
-def _lodging_coverage(gap: Gap, days: list[Day]) -> list[str]:
-    """Nights from the gap's day through the end of that consecutive stay.
-
-    The trip's last day is a departure day with no night.
-    """
-    index = next((i for i, d in enumerate(days) if d.id == gap.day_id), None)
-    if index is None:
-        return []
-    place_id = days[index].base_place_id
-    covered = []
-    for d in days[index : len(days) - 1]:
-        if d.base_place_id != place_id:
-            break
-        covered.append(d.id)
-    return covered
 
 
 @router.get("/trips/{trip_id}/board", response_model=Board)
@@ -149,12 +148,14 @@ def get_board(
         jobs[job.gap_id] = job
 
     candidates_by_gap: dict[str, list[Candidate]] = {}
+    hidden_by_gap: dict[str, list[Candidate]] = {}
     for c in session.exec(
         select(Candidate)
-        .where(Candidate.trip_id == trip.id, Candidate.status == "proposed")
+        .where(Candidate.trip_id == trip.id, Candidate.status.in_(("proposed", "rejected")))
         .order_by(Candidate.created_at)
     ):
-        candidates_by_gap.setdefault(c.gap_id, []).append(c)
+        bucket = candidates_by_gap if c.status == "proposed" else hidden_by_gap
+        bucket.setdefault(c.gap_id, []).append(c)
     sources_by_candidate: dict[str, list[Source]] = {}
     for src in session.exec(select(Source).where(Source.trip_id == trip.id, Source.subject_kind == "candidate")):
         sources_by_candidate.setdefault(src.subject_id, []).append(src)
@@ -171,6 +172,7 @@ def get_board(
             BoardPlace(
                 id=p.id, name=p.name, kind=p.kind, lat=p.lat, lng=p.lng, precision=p.precision,
                 locating=p in pending_lookup or (p.kind == "city" and p.lat is None and _recently_claimed(p)),
+                address=p.address, website_url=p.website_url, summary=p.summary,
             )
             for p in places
         ],
@@ -181,20 +183,26 @@ def get_board(
                 kind=g.kind,
                 prompt=g.prompt,
                 status=g.status,
-                covers_day_ids=_lodging_coverage(g, days) if g.kind == "lodging" else ([g.day_id] if g.day_id else []),
+                covers_day_ids=[d.id for d in lodging_coverage(g, days)] if g.kind == "lodging" else ([g.day_id] if g.day_id else []),
                 job=BoardJob(id=jobs[g.id].id, status=jobs[g.id].status, error=jobs[g.id].error) if g.id in jobs else None,
                 candidates=[_candidate_out(c, sources_by_candidate.get(c.id, [])) for c in candidates_by_gap.get(g.id, [])],
+                hidden=[
+                    BoardHidden(id=c.id, name=(c.payload or {}).get("name", ""), reason=c.rejection_reason)
+                    for c in hidden_by_gap.get(g.id, [])
+                ],
+                resolved_by_kind=g.resolved_by_kind,
+                resolved_by_id=g.resolved_by_id,
             )
             for g in gaps
         ],
         lodgings=[
             BoardLodging(id=l.id, place_id=l.place_id, check_in=l.check_in, check_out=l.check_out,
-                         status=l.status, booking_url=l.booking_url)
+                         status=l.status, booking_url=l.booking_url, notes=l.notes)
             for l in lodgings
         ],
         activities=[
             BoardActivity(id=a.id, day_id=a.day_id, name=a.name, kind=a.kind, place_id=a.place_id,
-                          start_time=a.start_time, status=a.status)
+                          start_time=a.start_time, status=a.status, booking_url=a.booking_url, notes=a.notes)
             for a in activities
         ],
     )

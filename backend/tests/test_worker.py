@@ -35,7 +35,11 @@ def _candidate(name, **overrides):
     return CandidateIn.model_validate(data)
 
 
-def _run(engine, runner):
+def no_results(params):
+    return []
+
+
+def _run(engine, runner, fetch=no_results):
     captured = {}
 
     def wrapped(ctx):
@@ -46,7 +50,7 @@ def _run(engine, runner):
         job = claim_job(s)
         assert job is not None
         job_id = job.id
-        run_job(s, job, runner=wrapped)
+        run_job(s, job, runner=wrapped, fetch=fetch)
     return job_id, captured.get("ctx")
 
 

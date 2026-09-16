@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -82,6 +83,11 @@ def nominatim_search(params: dict) -> list[GeoResult]:
     ]
 
 
+def default_fetcher() -> Fetcher:
+    """Looked up at call time (not bound as a default argument) so tests can block the network."""
+    return nominatim_search
+
+
 def _normalize(text: str) -> str:
     return " ".join(text.casefold().split())
 
@@ -91,19 +97,35 @@ def _cache_key(params: dict) -> str:
     return json.dumps(normalized, sort_keys=True, ensure_ascii=False)
 
 
-def cached_lookup(session: Session, params: dict, fetch: Fetcher) -> GeoResult | None:
+def is_area(result: GeoResult) -> bool:
+    return result.category in ACCEPTED_CATEGORIES
+
+
+def is_located_poi(result: GeoResult) -> bool:
+    # Hotels, restaurants, buildings, and addresses are all fine for an option;
+    # a bare road isn't a place anyone can go to.
+    return result.category != "highway"
+
+
+def cached_lookup(
+    session: Session,
+    params: dict,
+    fetch: Fetcher,
+    accept: Callable[[GeoResult], bool] = is_area,
+) -> GeoResult | None:
     """First accepted result for these params, from cache or one network call.
 
-    Only the accepted result (or the fact that none was acceptable) is cached.
-    Network errors propagate and are not cached.
+    Only the accepted result (or the fact that none was acceptable) is cached,
+    keyed by params plus the acceptance rule. Network errors propagate and are
+    not cached.
     """
-    key = _cache_key(params)
+    key = _cache_key({**params, "_accept": accept.__name__})
     hit = session.get(GeocodeCache, key)
     if hit is not None:
         if not hit.found:
             return None
         return GeoResult(hit.lat, hit.lng, hit.display_name, hit.category, hit.country_code)
-    result = next((r for r in fetch(params) if r.category in ACCEPTED_CATEGORIES), None)
+    result = next((r for r in fetch(params) if accept(r)), None)
     session.add(GeocodeCache(
         query=key,
         found=result is not None,
@@ -142,6 +164,51 @@ def locate_city(session: Session, city: str, country_codes: list[str], fetch: Fe
     return None
 
 
+MAX_OPTION_DISTANCE_KM = 40.0
+
+
+def distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lat1, lng1, lat2, lng2 = map(math.radians, (*a, *b))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2
+    return 2 * 6371.0 * math.asin(math.sqrt(h))
+
+
+def locate_option(
+    session: Session,
+    name: str,
+    address: str | None,
+    city: str | None,
+    country_codes: list[str],
+    near: tuple[float, float] | None,
+    fetch: Fetcher,
+) -> GeoResult | None:
+    """Find a research option (a hotel, restaurant, sight) on the map.
+
+    Unlike cities, a named place *should* be searched with its city, because
+    the place is what we want. The guard is distance instead: a result is only
+    kept if it's within MAX_OPTION_DISTANCE_KM of the day's base city. With no
+    base coordinates, it must at least be in one of the trip's countries.
+    """
+    if near is None and not country_codes:
+        return None  # nothing to sanity-check against; better no pin than a wrong one
+    limits = {"countrycodes": ",".join(sorted(country_codes))} if country_codes else {}
+    queries = []
+    if address:
+        queries.append(address if (not city or city.casefold() in address.casefold()) else f"{address}, {city}")
+    queries.append(f"{name}, {city}" if city else name)
+    for q in queries:
+        result = cached_lookup(session, {"q": q, **limits}, fetch, accept=is_located_poi)
+        if result is None:
+            continue
+        if near is not None and distance_km(near, (result.lat, result.lng)) > MAX_OPTION_DISTANCE_KM:
+            log.info("ignoring %r for %r: %.0f km from base", result.display_name, name, distance_km(near, (result.lat, result.lng)))
+            continue
+        if near is None and result.country_code not in country_codes:
+            continue
+        return result
+    return None
+
+
 def _as_utc(value: datetime) -> datetime:
     # SQLite returns naive datetimes; everything we store is UTC.
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
@@ -164,13 +231,14 @@ def needs_lookup(place: Place, now: datetime | None = None) -> bool:
 def geocode_trip_places(
     trip_id: str,
     session_factory: Callable[[], Session] = lambda: Session(engine),
-    fetch: Fetcher = nominatim_search,
+    fetch: Fetcher | None = None,
 ) -> None:
     """Locate a trip's city places that need it.
 
     Safe to call repeatedly and concurrently: each place is claimed with a
     compare-and-set on geocoded_at before any network call.
     """
+    fetch = fetch or default_fetcher()
     with session_factory() as session:
         trip = session.get(Trip, trip_id)
         if trip is None:

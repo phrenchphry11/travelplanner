@@ -11,3 +11,8 @@ dist/
 .env
 .env.local
 .DS_Store
+
+# Parallel agent worktrees (scripts/agents.sh). The venv is a symlink there,
+# which backend/.gitignore's ".venv/" does not match.
+.agent-slot
+backend/.venv

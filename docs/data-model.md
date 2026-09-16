@@ -63,8 +63,8 @@ Anything with a location. Shared vocabulary for lodging, activities, transit end
 | check_in, check_out | dates; links to Days by range, no join table |
 | booking_url, confirmation_code | |
 | cost, currency | nullable |
-| status | `idea`, `shortlisted`, `booked` |
-| notes | |
+| status | `idea`, `shortlisted`, `planned`, `booked` (`planned` = chosen in the app, not yet booked) |
+| notes | price range text for chosen options |
 
 ### Transit (a leg)
 | field | notes |

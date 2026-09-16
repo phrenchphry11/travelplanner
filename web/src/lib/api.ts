@@ -132,6 +132,9 @@ export type BoardPlace = {
   lng: number | null;
   precision: string;
   locating: boolean;
+  address: string;
+  website_url: string;
+  summary: string;
 };
 export type BoardJob = { id: string; status: "queued" | "running" | "done" | "failed"; error: string };
 export type BoardSource = { title: string; url: string; note: string };
@@ -163,9 +166,30 @@ export type BoardGap = {
   covers_day_ids: string[];
   job: BoardJob | null;
   candidates: BoardCandidate[];
+  hidden: { id: string; name: string; reason: string }[];
+  resolved_by_kind: "lodging" | "activity" | null;
+  resolved_by_id: string | null;
 };
-export type BoardLodging = { id: string; place_id: string; check_in: string; check_out: string; status: string; booking_url: string };
-export type BoardActivity = { id: string; day_id: string; name: string; kind: string; place_id: string | null; start_time: string; status: string };
+export type BoardLodging = {
+  id: string;
+  place_id: string;
+  check_in: string;
+  check_out: string;
+  status: string;
+  booking_url: string;
+  notes: string;
+};
+export type BoardActivity = {
+  id: string;
+  day_id: string;
+  name: string;
+  kind: string;
+  place_id: string | null;
+  start_time: string;
+  status: string;
+  booking_url: string;
+  notes: string;
+};
 export type Board = {
   trip: Trip;
   days: BoardDay[];
@@ -187,4 +211,23 @@ export function isJobActive(job: BoardJob | null): boolean {
 export function shortDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+
+/** Lodging that covers the night of this date (check_in <= date < check_out). */
+export function lodgingForNight(board: Board, isoDate: string): BoardLodging | undefined {
+  return board.lodgings.find((l) => l.check_in <= isoDate && isoDate < l.check_out);
+}
+
+export function gapResolvedBy(board: Board, itemId: string): BoardGap | undefined {
+  return board.gaps.find((g) => g.resolved_by_id === itemId);
+}
+
+export function nightsLabel(board: Board, gap: BoardGap): string {
+  const days = gap.covers_day_ids.map((id) => board.days.find((d) => d.id === id)).filter((d): d is BoardDay => !!d);
+  if (gap.kind !== "lodging" || days.length === 0) {
+    const day = board.days.find((d) => d.id === gap.day_id);
+    return day ? shortDate(day.date) : "";
+  }
+  const n = days.length;
+  return `${n} night${n === 1 ? "" : "s"} from ${shortDate(days[0].date)}`;
 }

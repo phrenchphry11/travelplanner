@@ -15,9 +15,13 @@ from datetime import timedelta
 from sqlalchemy import or_, update
 from sqlmodel import Session, select
 
+import httpx
+
 from app.agents.research import CandidateIn, ResearchContext, ResearchError, ResearchRunner, research_gap
 from app.config import get_settings
 from app.db import engine
+from app import geocoding
+from app.geocoding import Fetcher, country_codes_for, locate_option
 from app.models import Candidate, Day, Gap, Place, ResearchJob, Source, Trip, utcnow
 
 log = logging.getLogger("worker")
@@ -119,8 +123,9 @@ def _place_kind(gap_kind: str, c: CandidateIn) -> str:
     return ACTIVITY_PLACE_KIND.get(c.activity_kind or "", "other")
 
 
-def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: list[CandidateIn]) -> None:
+def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: list[CandidateIn]) -> list[tuple[Place, CandidateIn]]:
     now = utcnow()
+    saved: list[tuple[Place, CandidateIn]] = []
     for c in candidates:
         place = Place(
             trip_id=job.trip_id,
@@ -136,6 +141,7 @@ def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: li
         )
         session.add(place)
         session.flush()  # place before the candidate that references it
+        saved.append((place, c))
 
         candidate = Candidate(
             trip_id=job.trip_id,
@@ -162,6 +168,28 @@ def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: li
                 note=s.note,
                 fetched_at=now,
             ))
+    return saved
+
+
+def locate_options(session: Session, job: ResearchJob, gap: Gap, saved: list[tuple[Place, CandidateIn]], fetch: Fetcher) -> None:
+    """Best-effort map pins for options research didn't give coordinates for."""
+    trip = session.get(Trip, job.trip_id)
+    day = session.get(Day, gap.day_id) if gap.day_id else None
+    base = session.get(Place, day.base_place_id) if day and day.base_place_id else None
+    near = (base.lat, base.lng) if base and base.lat is not None and base.lng is not None else None
+    try:
+        codes = country_codes_for(session, list(trip.destinations or []), fetch) if trip else []
+        for place, c in saved:
+            if place.lat is not None:
+                continue
+            result = locate_option(session, c.name, c.address, base.name if base else None, codes, near, fetch)
+            if result:
+                place.lat, place.lng, place.precision = result.lat, result.lng, "approximate"
+                session.add(place)
+        session.commit()
+    except (httpx.HTTPError, ValueError, KeyError):
+        session.rollback()
+        log.warning("locating options for job %s failed; they'll show without pins", job.id, exc_info=True)
 
 
 def _fail(session: Session, job: ResearchJob, message: str) -> None:
@@ -178,7 +206,12 @@ def _fail(session: Session, job: ResearchJob, message: str) -> None:
     session.commit()
 
 
-def run_job(session: Session, job: ResearchJob, runner: ResearchRunner = research_gap) -> None:
+def run_job(
+    session: Session,
+    job: ResearchJob,
+    runner: ResearchRunner = research_gap,
+    fetch: Fetcher | None = None,
+) -> None:
     log.info("running job %s for gap %s (attempt %d)", job.id, job.gap_id, job.attempts)
     try:
         ctx = build_context(session, job)
@@ -197,7 +230,9 @@ def run_job(session: Session, job: ResearchJob, runner: ResearchRunner = researc
         job.status = "failed"
         job.error = "We couldn't find good options this time. Try again."
     else:
-        save_candidates(session, job, gap, result.candidates)
+        saved = save_candidates(session, job, gap, result.candidates)
+        session.commit()  # keep options even if locating them fails
+        locate_options(session, job, gap, saved, fetch or geocoding.default_fetcher())
         job.status = "done"
         job.error = ""
     job.finished_at = utcnow()

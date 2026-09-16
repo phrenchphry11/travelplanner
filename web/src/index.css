@@ -158,3 +158,27 @@ button.icon { padding: 6px 10px; background: transparent; color: var(--ink); bor
 .pros-cons .pro::before { content: "+"; color: #2f6f43; }
 .pros-cons .con::before { content: "−"; color: var(--warn); }
 .candidate-card footer { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+
+/* Compare drawer */
+.drawer { display: grid; gap: 12px; }
+.drawer-header h3 { font-size: 1.2rem; margin: 8px 0 2px; }
+.compare-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(250px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
+.compare-row .candidate-card { scroll-snap-align: start; display: flex; flex-direction: column; }
+.compare-row .candidate-card footer { margin-top: auto; padding-top: 6px; }
+.candidate-card.highlighted { border-color: #d9822b; box-shadow: 0 0 0 2px rgba(217, 130, 43, 0.25); }
+.card-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.card-actions button { padding: 6px 12px; }
+.reject-form { display: grid; gap: 6px; margin-top: 10px; }
+.reject-form label { display: grid; gap: 4px; }
+.reject-form input, .find-more input { font: inherit; padding: 8px 10px; border: 1px solid #cfc8bb; border-radius: 8px; min-width: 0; }
+.find-more { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.hidden-options summary { cursor: pointer; color: var(--muted); }
+.hidden-options ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.hidden-options li { display: flex; justify-content: space-between; gap: 12px; }
+.notice { background: #e2f1e6; color: #2f6f43; border-radius: 8px; padding: 8px 12px; margin: 0; }
+.plan-item { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid #6d5fae; border-radius: 8px; margin-bottom: 8px; background: #fff; }
+.plan-item p { margin: 2px 0 0; }
+.plan-links { display: flex; gap: 12px; }
+@media (max-width: 900px) {
+  .compare-row { grid-auto-flow: row; grid-auto-columns: auto; overflow-x: visible; }
+}

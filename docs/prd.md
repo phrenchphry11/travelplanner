@@ -139,6 +139,24 @@ drawer shows the *Find options* button and an *Add manually* form. If a job
 failed, it says so and offers retry. Users never see JSON, ids, or model
 names.
 
+Implemented 2026-09-16:
+- The drawer replaces the board panel's tabs while open (map stays visible),
+  opened from a gap's *Find options* / *Compare N options* button or the
+  Overview's missing list, with `?gap=` in the URL.
+- *Choose* creates a Lodging for exactly the stay's nights, or an Activity
+  on the day, with status `planned`, the option's link, price notes, and
+  place. The gap becomes `answered`; other options stay for a later change.
+- *Not this one* hides an option with an optional reason; *Hidden (n)*
+  lists them with *Bring back*. Reasons feed the next research run.
+- *Change* on a chosen stay or plan removes that item and reopens the gap
+  with its options.
+- Options get map pins when research returns coordinates or the worker can
+  find their address on OpenStreetMap within 40 km of the day's city.
+  Hovering a card highlights its pin; clicking a pin scrolls to its card.
+- Research only starts from a button labeled *Find options* or *Find more*,
+  never from simply opening the drawer, because each run costs money.
+- *Add manually* is still deferred to the manual add/edit epic.
+
 ### 5.6 Shared itinerary (public)
 Mobile-first. Vertical day list; tapping a day expands its timeline. Sticky
 map at the top that recenters on the expanded day. Each item links out

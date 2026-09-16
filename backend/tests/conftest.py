@@ -27,6 +27,17 @@ def no_real_anthropic_calls(monkeypatch):
     monkeypatch.setattr(research, "_client", _blocked)
 
 
+@pytest.fixture(autouse=True)
+def no_real_nominatim_calls(monkeypatch):
+    """Tests must not hit OpenStreetMap either; pass a fake fetch instead."""
+    from app import geocoding
+
+    def _blocked():
+        raise RuntimeError("Tests must not call Nominatim; pass a fake fetch.")
+
+    monkeypatch.setattr(geocoding, "default_fetcher", _blocked)
+
+
 @pytest.fixture
 def engine():
     """In-memory SQLite by default. Set TEST_DATABASE_URL to run against Postgres,
