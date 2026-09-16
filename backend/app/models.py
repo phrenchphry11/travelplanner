@@ -201,11 +201,13 @@ class ResearchJob(SQLModel, table=True):
 
 
 class GeocodeCache(SQLModel, table=True):
-    """Nominatim results keyed by normalized query. Required by its usage policy."""
+    """Accepted Nominatim results keyed by normalized search params. Required by its usage policy."""
     __tablename__ = "geocode_cache"
     query: str = Field(primary_key=True)
     found: bool = False
     lat: float | None = None
     lng: float | None = None
     display_name: str = ""
+    category: str = ""  # Nominatim category of the accepted result, e.g. boundary, place
+    country_code: str = ""
     created_at: datetime = Field(default_factory=utcnow)
