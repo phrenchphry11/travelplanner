@@ -195,6 +195,15 @@ Implemented 2026-09-16:
 - Plans for a day can be added by hand from the Day tab (see 5.4). Adding a
   stay by hand is still deferred to the manual add/edit epic.
 
+Saved places (2026-09-17): a new "Saved places" tab on the board holds a
+trip-wide list of spots not tied to any day (coffee, food, sight, shop,
+other), added by hand with an optional address, link, and notes. They get
+a distinct green pin on the map, geocoded the same way as research
+options but without a day to check distance against, so acceptance falls
+back to matching the trip's countries. Deferred: research-driven saved
+places ("find coffee shops near our Lisbon base"), moving a saved place
+onto a day, and a share-page layer for them.
+
 ### 5.6 Shared itinerary (public)
 Mobile-first. Vertical day list; tapping a day expands its timeline. Sticky
 map at the top that recenters on the expanded day. Each item links out

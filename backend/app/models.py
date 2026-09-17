@@ -78,6 +78,7 @@ class Place(SQLModel, table=True):
     summary: str = ""
     notes: str = ""
     tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    saved: bool = False  # a trip-wide favorite (coffee shop, park, ...), not tied to any day
 
 
 class Day(SQLModel, table=True):

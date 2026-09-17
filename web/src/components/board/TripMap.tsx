@@ -18,7 +18,7 @@ type Props = {
   onHoverOption: (candidateId: string | null) => void;
 };
 
-const COLORS = { city: "#2f68a2", selectedCity: "#b54844", chosen: "#6d5fae", option: "#d9822b", optionHot: "#b54844" };
+const COLORS = { city: "#2f68a2", selectedCity: "#b54844", chosen: "#6d5fae", option: "#d9822b", optionHot: "#b54844", saved: "#2f9e6b" };
 
 function FitToPoints({ points }: { points: LatLngTuple[] }) {
   const map = useMap();
@@ -81,6 +81,7 @@ export default function TripMap(props: Props) {
     () => places.filter((p) => chosenPlaceIds.has(p.id) && hasCoords(p) && !stopHotelIds.has(p.id)),
     [places, chosenPlaceIds, stopHotelIds],
   );
+  const saved = useMemo(() => places.filter((p) => p.saved && hasCoords(p)), [places]);
 
   // With options open, zoom to them (plus the day's stop); otherwise the whole trip.
   const fitPoints: LatLngTuple[] = useMemo(() => {
@@ -129,6 +130,17 @@ export default function TripMap(props: Props) {
             center={[p.lat!, p.lng!]}
             radius={7}
             pathOptions={{ color: "#fff", weight: 2, fillColor: COLORS.chosen, fillOpacity: 1 }}
+          >
+            <Tooltip direction="top" offset={[0, -6]}>{p.name}</Tooltip>
+          </CircleMarker>
+        ))}
+
+        {saved.map((p) => (
+          <CircleMarker
+            key={p.id}
+            center={[p.lat!, p.lng!]}
+            radius={6}
+            pathOptions={{ color: "#fff", weight: 2, fillColor: COLORS.saved, fillOpacity: 1 }}
           >
             <Tooltip direction="top" offset={[0, -6]}>{p.name}</Tooltip>
           </CircleMarker>

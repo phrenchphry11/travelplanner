@@ -136,7 +136,21 @@ export type BoardPlace = {
   address: string;
   website_url: string;
   summary: string;
+  notes: string;
+  saved: boolean;
 };
+
+export type SavedPlaceKind = "coffee" | "food" | "sight" | "shop" | "other";
+export const SAVED_PLACE_KINDS: { value: SavedPlaceKind; label: string }[] = [
+  { value: "coffee", label: "Coffee" },
+  { value: "food", label: "Food" },
+  { value: "sight", label: "Sight" },
+  { value: "shop", label: "Shop" },
+  { value: "other", label: "Other" },
+];
+
+export type NewSavedPlace = { name: string; kind: SavedPlaceKind; address: string; link: string; notes: string };
+export type SavedPlaceChanges = Partial<NewSavedPlace>;
 export type BoardJob = { id: string; status: "queued" | "running" | "done" | "failed"; error: string };
 export type BoardSource = { title: string; url: string; note: string };
 export type BoardCandidate = {

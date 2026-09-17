@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import CompareDrawer from "../components/board/CompareDrawer";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ShareDialog from "../components/ShareDialog";
-import { ActivitiesTab, DayTab, LodgingTab, OverviewTab } from "../components/board/tabs";
+import { ActivitiesTab, DayTab, LodgingTab, OverviewTab, SavedPlacesTab } from "../components/board/tabs";
 import TripMap, { type MapOption } from "../components/board/TripMap";
 import TopBar from "../components/TopBar";
 import {
@@ -18,9 +18,12 @@ import {
   type BoardCandidate,
   type BoardDay,
   type BoardGap,
+  type BoardPlace,
   type NewLodging,
+  type NewSavedPlace,
   type NewPlan,
   type PlanChanges,
+  type SavedPlaceChanges,
   type TimeOfDay,
 } from "../lib/api";
 
@@ -29,6 +32,7 @@ const TABS = [
   { id: "day", label: "Day" },
   { id: "lodging", label: "Where to stay" },
   { id: "activities", label: "Things to do" },
+  { id: "saved", label: "Saved places" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
@@ -52,6 +56,7 @@ export default function TripBoard() {
   const [shareError, setShareError] = useState<string | null>(null);
   const [pendingRemove, setPendingRemove] = useState<BoardActivity | null>(null);
   const [pendingDismiss, setPendingDismiss] = useState<BoardGap | null>(null);
+  const [pendingRemovePlace, setPendingRemovePlace] = useState<BoardPlace | null>(null);
   const polls = useRef(0);
 
   const load = useCallback(async () => {
@@ -178,6 +183,21 @@ export default function TripBoard() {
     await act(() => api(`/gaps/${gap.id}/dismiss`, { method: "POST" }));
     setPendingDismiss(null);
     closeDrawer();
+  }
+
+  async function addSavedPlace(place: NewSavedPlace) {
+    await submit(() => api(`/trips/${board!.trip.id}/places`, { method: "POST", body: JSON.stringify(place) }));
+  }
+
+  async function editSavedPlace(placeId: string, changes: SavedPlaceChanges) {
+    await submit(() => api(`/places/${placeId}`, { method: "PATCH", body: JSON.stringify(changes) }));
+  }
+
+  async function confirmRemovePlace() {
+    if (!pendingRemovePlace) return;
+    const place = pendingRemovePlace;
+    await act(() => api(`/places/${place.id}`, { method: "DELETE" }));
+    setPendingRemovePlace(null);
   }
 
   async function startResearch(gap: BoardGap, nudge = "") {
@@ -394,6 +414,15 @@ export default function TripBoard() {
               )}
               {tab === "lodging" && <LodgingTab board={board} onOpenDay={openDay} {...gapProps} />}
               {tab === "activities" && <ActivitiesTab board={board} onOpenDay={openDay} />}
+              {tab === "saved" && (
+                <SavedPlacesTab
+                  board={board}
+                  busy={busy}
+                  onAddSavedPlace={addSavedPlace}
+                  onEditSavedPlace={editSavedPlace}
+                  onRemoveSavedPlace={(placeId) => setPendingRemovePlace(board.places.find((p) => p.id === placeId) ?? null)}
+                />
+              )}
             </>
           )}
         </section>
@@ -455,6 +484,22 @@ export default function TripBoard() {
         {pendingDismiss && (
           <p>
             <strong>{pendingDismiss.prompt}</strong> and the ideas we found for it will be removed from your day.
+          </p>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingRemovePlace !== null}
+        title="Remove this saved place?"
+        confirmLabel="Remove it"
+        tone="danger"
+        busy={busy}
+        onConfirm={confirmRemovePlace}
+        onCancel={() => setPendingRemovePlace(null)}
+      >
+        {pendingRemovePlace && (
+          <p>
+            <strong>{pendingRemovePlace.name}</strong> will be removed from your saved places. This can't be undone.
           </p>
         )}
       </ConfirmDialog>

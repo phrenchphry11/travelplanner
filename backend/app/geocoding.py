@@ -366,7 +366,7 @@ def _locate_options(session: Session, trip_id: str, places: list[Place], codes: 
         candidate = by_place.get(place.id)
         activity = activity_by_place.get(place.id)
         lodging = lodging_by_place.get(place.id)
-        if candidate is None and activity is None and lodging is None:
+        if candidate is None and activity is None and lodging is None and not place.saved:
             continue
         if not _claim(session, place):
             continue
@@ -375,12 +375,14 @@ def _locate_options(session: Session, trip_id: str, places: list[Place], codes: 
             day_id = gap.day_id if gap else None
         elif activity is not None:
             day_id = activity.day_id
-        else:
+        elif lodging is not None:
             # A stay's own day_id isn't stored; its first night is the day it started.
             first_night = session.exec(
                 select(Day).where(Day.trip_id == trip_id, Day.date == lodging.check_in)
             ).first()
             day_id = first_night.id if first_night else None
+        else:
+            day_id = None  # a saved place isn't tied to any day; just check it's in the trip's countries
         day = session.get(Day, day_id) if day_id else None
         base = session.get(Place, day.base_place_id) if day and day.base_place_id else None
         near = (base.lat, base.lng) if base and base.lat is not None and base.lng is not None else None

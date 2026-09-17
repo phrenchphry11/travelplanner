@@ -37,6 +37,8 @@ class BoardPlace(BaseModel):
     address: str
     website_url: str
     summary: str
+    notes: str
+    saved: bool
 
 
 class BoardJob(BaseModel):
@@ -180,7 +182,7 @@ def get_board(
             BoardPlace(
                 id=p.id, name=p.name, kind=p.kind, lat=p.lat, lng=p.lng, precision=p.precision,
                 locating=p in pending_lookup or (p.kind == "city" and p.lat is None and _recently_claimed(p)),
-                address=p.address, website_url=p.website_url, summary=p.summary,
+                address=p.address, website_url=p.website_url, summary=p.summary, notes=p.notes, saved=p.saved,
             )
             for p in places
         ],

@@ -1,9 +1,24 @@
-import type { Board, BoardActivity, BoardDay, BoardGap, BoardLodging, NewLodging, NewPlan, PlanChanges, TimeOfDay } from "../../lib/api";
-import { gapResolvedBy, isGapOpen, isJobActive, lodgingForNight, shortDate } from "../../lib/api";
+import type {
+  Board,
+  BoardActivity,
+  BoardDay,
+  BoardGap,
+  BoardLodging,
+  NewLodging,
+  NewPlan,
+  NewSavedPlace,
+  SavedPlaceChanges,
+  SavedPlaceKind,
+  TimeOfDay,
+  PlanChanges,
+} from "../../lib/api";
+import { gapResolvedBy, isGapOpen, isJobActive, lodgingForNight, SAVED_PLACE_KINDS, shortDate } from "../../lib/api";
 import AddPlan from "./AddPlan";
+import AddSavedPlace from "./AddSavedPlace";
 import DayPlan from "./DayPlan";
 import GapSlot from "./GapSlot";
 import PlanItem from "./PlanItem";
+import SavedPlaceItem from "./SavedPlaceItem";
 
 type GapProps = {
   onOpenGap: (gap: BoardGap, opts?: { startResearch?: boolean }) => void;
@@ -249,6 +264,50 @@ export function ActivitiesTab({ board, onOpenDay }: { board: Board; onOpenDay: (
           );
         })}
       </ol>
+    </div>
+  );
+}
+
+
+type SavedPlaceProps = {
+  busy: boolean;
+  onAddSavedPlace: (place: NewSavedPlace) => Promise<void>;
+  onEditSavedPlace: (placeId: string, changes: SavedPlaceChanges) => Promise<void>;
+  onRemoveSavedPlace: (placeId: string) => void;
+};
+
+export function SavedPlacesTab({ board, ...props }: { board: Board } & SavedPlaceProps) {
+  const saved = board.places.filter((p) => p.saved);
+  const byKind = new Map<SavedPlaceKind, typeof saved>();
+  for (const kind of SAVED_PLACE_KINDS.map((k) => k.value)) byKind.set(kind, []);
+  for (const place of saved) byKind.get(place.kind as SavedPlaceKind)?.push(place) ?? byKind.set("other", [place]);
+
+  return (
+    <div className="tab-body">
+      {saved.length === 0 && (
+        <p className="muted">
+          Nowhere saved yet. Keep a list of coffee shops, parks, or anything else you want on the map, without tying it to a day.
+        </p>
+      )}
+      {SAVED_PLACE_KINDS.map(({ value, label }) => {
+        const places = byKind.get(value) ?? [];
+        if (places.length === 0) return null;
+        return (
+          <section key={value} className="slot-group">
+            <h4>{label}</h4>
+            {places.map((p) => (
+              <SavedPlaceItem
+                key={p.id}
+                place={p}
+                busy={props.busy}
+                onEdit={(changes) => props.onEditSavedPlace(p.id, changes)}
+                onRemove={() => props.onRemoveSavedPlace(p.id)}
+              />
+            ))}
+          </section>
+        );
+      })}
+      <AddSavedPlace busy={props.busy} onAdd={props.onAddSavedPlace} />
     </div>
   );
 }
