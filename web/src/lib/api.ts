@@ -52,6 +52,7 @@ export type Trip = {
   end_date: string | null;
   status: "dreaming" | "planning" | "booked" | "done";
   open_gap_count: number;
+  share_slug: string | null; // set while a read-only link is published
 };
 
 export const STATUS_LABELS: Record<Trip["status"], string> = {

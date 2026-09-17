@@ -49,6 +49,7 @@ class TripOut(BaseModel):
     end_date: date | None
     status: str
     open_gap_count: int = 0
+    share_slug: str | None = None  # set while the trip is published
 
 
 def to_trip_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
@@ -59,6 +60,7 @@ def to_trip_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
         end_date=trip.end_date,
         status=trip.status,
         open_gap_count=open_gap_count,
+        share_slug=trip.share_slug,
     )
 
 

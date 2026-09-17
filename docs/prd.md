@@ -174,6 +174,32 @@ protection in v1; no passcode. Guardrails:
 Passcodes or traveler sign-in are deferred until genuinely sensitive data
 (confirmation numbers, flight details) is added to the shared view.
 
+Implemented (2026-09-16):
+- Board header *Share* button opens a dialog: *Create link* when off; when
+  on, the link with *Copy*, *Open link*, *Make a new link* (old link stops
+  working) and *Stop sharing*. Only the trip owner can change sharing
+  (`POST /trips/{id}/share` is idempotent, `POST .../share/regenerate`,
+  `DELETE .../share`); non-members get 404. `share_slug` is on the trip in
+  the board response; the web app builds `/s/{slug}` from its own origin.
+- `GET /share/{slug}` has no auth dependency and answers with
+  `X-Robots-Tag: noindex, nofollow` and `Cache-Control: no-store`. Unknown,
+  unpublished and replaced links all get the same 404.
+- Public payload fields (allow-list, no ids anywhere): trip `title`,
+  `start_date`, `end_date`; `days[]` with `date`, `title`, `summary`,
+  `city`, and `plans[]` (ordered morning, afternoon, evening, then the rest)
+  with `name`, `time`, `place`, `booking_url`, `website_url`, `notes`;
+  `stays[]` with `place`, `check_in`, `check_out`, `nights`, `booking_url`,
+  `website_url`. A `place` is `name`, `address`, `lat`, `lng` (null when
+  not pinned).
+- Deliberately left out: lodging `notes` (they hold price ranges), `cost`,
+  `currency`, confirmation codes, statuses, day notes, place notes and
+  summaries, gaps, candidates, sources, research jobs, members and owner.
+  Activity `notes` are shown because they describe the plan.
+- `/s/:slug` works signed out: sticky map (city, stay and plan pins, dashed
+  route through the days, recenters on the open day), tap-to-expand day
+  list opening today's day while traveling, links to booking, website and
+  Google Maps. Sets `robots: noindex` and `referrer: no-referrer` meta tags.
+
 ## 6. Agent behavior
 
 **Intake agent** (synchronous, in the API): parses free text into a structured

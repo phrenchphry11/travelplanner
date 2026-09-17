@@ -195,3 +195,53 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
   .confirm-dialog[open] { animation: dialog-in 0.14s ease-out; }
   @keyframes dialog-in { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
 }
+
+/* Share dialog */
+.board-actions { display: flex; gap: 8px; align-items: center; }
+.share-on { font-weight: 400; opacity: 0.85; }
+.share-dialog { width: min(480px, calc(100vw - 32px)); }
+.share-dialog .confirm-dialog-text { margin: 0; line-height: 1.5; }
+.share-link { display: grid; gap: 6px; }
+.share-link-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.share-link-row input { font: inherit; font-size: 0.9rem; padding: 8px 10px; border: 1px solid #cfc8bb; border-radius: 8px; min-width: 0; background: #fbfaf7; }
+.share-link-row button { padding: 8px 14px; }
+.share-link p { margin: 0; min-height: 1.2em; }
+.share-open { justify-self: start; padding: 6px 12px; font-size: 0.875rem; }
+.share-manage { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.share-manage p { margin: 4px 0 0; }
+
+/* Public shared itinerary: mobile first */
+.shared-page { max-width: 1180px; margin: 0 auto; padding: 0 0 48px; }
+.shared-header { padding: 16px 16px 12px; }
+.shared-header h1 { margin: 0 0 2px; line-height: 1.2; }
+.shared-header .muted { margin: 0; }
+.shared-map { position: sticky; top: 0; z-index: 10; isolation: isolate; height: clamp(220px, 38vh, 420px); background: #e8e4dc; border-block: 1px solid var(--line); }
+.shared-map .map-note { left: 50%; transform: translateX(-50%); white-space: nowrap; }
+.shared-days { list-style: none; margin: 0; padding: 12px 16px; display: grid; gap: 8px; }
+.shared-day { background: var(--card); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; scroll-margin-top: calc(clamp(220px, 38vh, 420px) + 8px); }
+.shared-day.open { border-color: #cfc8bb; }
+.shared-day-toggle { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; align-items: center; width: 100%; text-align: left; background: transparent; color: inherit; border: 0; border-radius: 0; padding: 14px 16px; font-weight: 400; min-height: 56px; }
+.shared-day-toggle:hover, .shared-day-toggle:focus-visible { background: #f3f0ea; }
+.shared-day-date { grid-column: 1; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.shared-day-title { grid-column: 1; font-weight: 600; overflow-wrap: anywhere; }
+.shared-chevron { grid-column: 2; grid-row: 1 / span 2; font-size: 1.4rem; line-height: 1; color: var(--muted); }
+.shared-day-body { padding: 0 16px 16px; }
+.shared-day-body h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 14px 0 6px; }
+.shared-summary { margin: 0; line-height: 1.5; }
+.shared-plans { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.shared-item { border: 1px solid var(--line); border-left: 3px solid #d9822b; border-radius: 8px; padding: 10px 12px; background: #fff; }
+.shared-item.stay { border-left-color: #6d5fae; }
+.shared-item p { margin: 3px 0 0; line-height: 1.45; overflow-wrap: anywhere; }
+.shared-time { display: block; font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.shared-links { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.shared-links a { display: inline-block; padding: 6px 0; font-weight: 600; }
+.shared-message { padding: 64px 16px; max-width: 480px; text-align: center; }
+.shared-message p { line-height: 1.5; }
+
+@media (min-width: 900px) {
+  .shared-header { padding: 24px 24px 16px; }
+  .shared-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px; align-items: start; padding: 0 24px; }
+  .shared-map { top: 16px; height: calc(100vh - 32px); max-height: 760px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .shared-days { padding: 0; }
+  .shared-day { scroll-margin-top: 16px; }
+}
