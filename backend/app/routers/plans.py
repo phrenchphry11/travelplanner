@@ -228,7 +228,7 @@ def add_plan(
         booking_url=body.link,
         status="planned",
         notes=body.notes,
-        sort_order=next_sort_order(session, day.id),
+        sort_order=next_sort_order(session, day.id, body.time_of_day),
     )
     session.add(activity)
     session.commit()
@@ -309,7 +309,7 @@ def update_plan(
         activity.time_of_day = body.time_of_day
         moved_day = True
     if moved_day:
-        activity.sort_order = next_sort_order(session, activity.day_id)  # last in its new part of the day
+        activity.sort_order = next_sort_order(session, activity.day_id, activity.time_of_day)
     if body.notes is not None:
         activity.notes = body.notes
     if body.link is not None:

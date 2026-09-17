@@ -109,18 +109,19 @@ def choose_candidate(
         if gap.day_id is None:
             raise HTTPException(status.HTTP_409_CONFLICT, "This isn't tied to a day.")
         best_time = payload.get("best_time")
+        # The traveler's own "in the evening" beats the option's best time.
+        time_of_day = gap.time_of_day or (best_time if best_time in TIMES_OF_DAY else "")
         item = Activity(
             trip_id=gap.trip_id,
             day_id=gap.day_id,
             name=payload.get("name", "") or "Plan",
             kind=payload.get("activity_kind") or "other",
             place_id=candidate.place_id,
-            # The traveler's own "in the evening" beats the option's best time.
-            time_of_day=gap.time_of_day or (best_time if best_time in TIMES_OF_DAY else ""),
+            time_of_day=time_of_day,
             booking_url=link,
             status="planned",
             notes=candidate.summary,
-            sort_order=next_sort_order(session, gap.day_id),
+            sort_order=next_sort_order(session, gap.day_id, time_of_day),
         )
         kind = "activity"
     else:

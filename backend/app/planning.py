@@ -89,6 +89,14 @@ def ordered_day_plans(session: Session, day_id: str) -> list[Activity]:
     return sorted(plans, key=lambda a: (*plan_order_key(a), a.id))
 
 
-def next_sort_order(session: Session, day_id: str) -> int:
-    orders = [a.sort_order for a in session.exec(select(Activity).where(Activity.day_id == day_id))]
+def next_sort_order(session: Session, day_id: str, time_of_day: str = "") -> int:
+    """The sort_order that puts a plan last within one time-of-day group on a day.
+
+    Display order always sorts by (time_rank, sort_order) first, so this only
+    needs to beat the other members of the same group, not the whole day.
+    """
+    orders = [
+        a.sort_order
+        for a in session.exec(select(Activity).where(Activity.day_id == day_id, Activity.time_of_day == time_of_day))
+    ]
     return max(orders) + 1 if orders else 0

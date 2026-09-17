@@ -386,3 +386,41 @@ def test_move_a_plan_rejects_a_day_from_another_trip(make_client):
     plan = _add(client, day_a, "Castle")
 
     assert client.patch(f"/activities/{plan['id']}", json={"day_id": day_b}).status_code == 409
+
+
+def test_next_sort_order_groups_by_time_of_day(make_client, session):
+    """A new morning plan lands after other mornings, unaffected by evening plans added since."""
+    from app.planning import next_sort_order
+
+    client = make_client()
+    trip_id = _confirm(client)
+    board = _board(client, trip_id)
+    day = board["days"][0]["id"]
+
+    _add(client, day, "Breakfast", time_of_day="morning")
+    _add(client, day, "Dinner", time_of_day="evening")
+    _add(client, day, "Late dinner", time_of_day="evening")
+
+    with Session(session.get_bind()) as s:
+        assert next_sort_order(s, day, "morning") == 1  # right after the one morning plan
+        assert next_sort_order(s, day, "afternoon") == 0  # empty group, unaffected by morning/evening
+        assert next_sort_order(s, day, "evening") == 2  # after both evening plans
+
+
+def test_moving_a_plan_to_a_busy_time_of_day_sets_sort_order_from_that_group_only(make_client, session):
+    """Regression: next_sort_order used to take max(sort_order) across the whole day, so a
+    plan moved into a busy evening could get a stale, lower sort_order than the fresh group max."""
+    client = make_client()
+    trip_id = _confirm(client)
+    day = _board(client, trip_id)["days"][0]["id"]
+
+    for i in range(5):
+        _add(client, day, f"Evening {i}", time_of_day="evening")  # evening sort_order 0..4
+    morning = _add(client, day, "Morning walk", time_of_day="morning")  # its own group: sort_order 0
+
+    client.patch(f"/activities/{morning['id']}", json={"time_of_day": "evening"})
+    session.expire_all()
+    moved = session.get(Activity, morning["id"])
+    # Last among the 5 evenings. The old whole-day-max version would have given 6 here
+    # (morning walk's own initial sort_order of 5, from the day's max at the time it was added).
+    assert moved.sort_order == 5
