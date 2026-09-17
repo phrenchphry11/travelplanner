@@ -1,5 +1,6 @@
 """A day's plans: ask for ideas, add one yourself, edit, reorder, and remove."""
 from collections.abc import Callable
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
@@ -35,6 +36,54 @@ def _member_activity(session: Session, activity_id: str, user: User) -> Activity
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return activity
+
+
+# ---- Renaming a day ---------------------------------------------------------
+
+class DayUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    summary: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            raise ValueError("Give the day a title.")
+        return v
+
+    @field_validator("summary")
+    @classmethod
+    def _strip(cls, v: str | None) -> str | None:
+        return None if v is None else v.strip()
+
+
+class DayDetailOut(BaseModel):
+    id: str
+    date: date
+    title: str
+    summary: str
+
+
+@router.patch("/days/{day_id}", response_model=DayDetailOut)
+def update_day(
+    day_id: str,
+    body: DayUpdate,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> DayDetailOut:
+    """Rename a day or edit its summary, any time after the trip is planned."""
+    day = _member_day(session, day_id, user)
+    if body.title is not None:
+        day.title = body.title
+    if body.summary is not None:
+        day.summary = body.summary
+    session.add(day)
+    session.commit()
+    session.refresh(day)
+    return DayDetailOut(id=day.id, date=day.date, title=day.title, summary=day.summary)
 
 
 # ---- Find ideas -------------------------------------------------------------
@@ -191,6 +240,7 @@ def add_plan(
 class PlanUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     time_of_day: TimeOfDay | None = None
+    day_id: str | None = None  # move this plan to a different day of the same trip
     notes: str | None = Field(default=None, max_length=2000)
     link: str | None = Field(default=None, max_length=1000)
 
@@ -241,8 +291,24 @@ def update_plan(
             place = session.get(Place, activity.place_id)
             place.name = body.name
             session.add(place)
+    moved_day = False
+    if body.day_id is not None and body.day_id != activity.day_id:
+        new_day = _member_day(session, body.day_id, user)
+        if new_day.trip_id != activity.trip_id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "That day isn't on this trip.")
+        activity.day_id = new_day.id
+        moved_day = True
+        # A plan chosen from a gap keeps the gap on the same day so "Change" makes sense.
+        gap = session.exec(
+            select(Gap).where(Gap.resolved_by_kind == "activity", Gap.resolved_by_id == activity.id)
+        ).first()
+        if gap is not None:
+            gap.day_id = new_day.id
+            session.add(gap)
     if body.time_of_day is not None and body.time_of_day != activity.time_of_day:
         activity.time_of_day = body.time_of_day
+        moved_day = True
+    if moved_day:
         activity.sort_order = next_sort_order(session, activity.day_id)  # last in its new part of the day
     if body.notes is not None:
         activity.notes = body.notes

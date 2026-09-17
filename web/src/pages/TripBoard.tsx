@@ -20,6 +20,7 @@ import {
   type BoardGap,
   type BoardPlace,
   type BoardTransit,
+  type DayChanges,
   type NewLodging,
   type NewTransit,
   type NewSavedPlace,
@@ -161,6 +162,10 @@ export default function TripBoard() {
 
   async function addPlan(day: BoardDay, plan: NewPlan) {
     await submit(() => api(`/days/${day.id}/plans`, { method: "POST", body: JSON.stringify(plan) }));
+  }
+
+  async function editDay(day: BoardDay, changes: DayChanges) {
+    await submit(() => api(`/days/${day.id}`, { method: "PATCH", body: JSON.stringify(changes) }));
   }
 
   async function addLodging(gap: BoardGap, lodging: NewLodging) {
@@ -334,6 +339,7 @@ export default function TripBoard() {
     onAddTransit: addTransit,
     onEditTransit: editTransit,
     onRemoveTransit: setPendingRemoveTransit,
+    onEditDay: editDay,
   };
   const removingChosen = pendingRemove ? board.gaps.some((g) => g.resolved_by_id === pendingRemove.id) : false;
   const removingDay = pendingRemove ? board.days.find((d) => d.id === pendingRemove.day_id) : undefined;

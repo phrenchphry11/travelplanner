@@ -163,3 +163,11 @@ def test_cannot_reopen_a_gap_on_a_deleted_trip(make_client):
     client.delete(f"/trips/{trip_id}")
 
     assert client.post(f"/gaps/{gap['id']}/reopen").status_code == 404
+
+
+def test_cannot_rename_a_day_on_a_deleted_trip(make_client):
+    client = make_client()
+    trip_id = _confirm(client, cities=CITIES)
+    day_id = client.get(f"/trips/{trip_id}/board").json()["days"][0]["id"]
+    client.delete(f"/trips/{trip_id}")
+    assert client.patch(f"/days/{day_id}", json={"title": "x"}).status_code == 404

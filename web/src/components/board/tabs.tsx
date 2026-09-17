@@ -5,6 +5,7 @@ import type {
   BoardGap,
   BoardLodging,
   BoardTransit,
+  DayChanges,
   NewLodging,
   NewPlan,
   NewSavedPlace,
@@ -18,6 +19,7 @@ import type {
 import { gapResolvedBy, isGapOpen, isJobActive, lodgingForNight, SAVED_PLACE_KINDS, shortDate } from "../../lib/api";
 import AddPlan from "./AddPlan";
 import AddTransit from "./AddTransit";
+import DayHeader from "./DayHeader";
 import AddSavedPlace from "./AddSavedPlace";
 import DayPlan from "./DayPlan";
 import GapSlot from "./GapSlot";
@@ -74,6 +76,7 @@ export type PlanProps = {
   onAddTransit: (day: BoardDay, leg: NewTransit) => Promise<void>;
   onEditTransit: (leg: BoardTransit, changes: TransitChanges) => Promise<void>;
   onRemoveTransit: (leg: BoardTransit) => void;
+  onEditDay: (day: BoardDay, changes: DayChanges) => Promise<void>;
 };
 
 export function OverviewTab({ board, onOpenDay, onOpenGap }: { board: Board; onOpenDay: (day: BoardDay) => void; onOpenGap: (gap: BoardGap) => void }) {
@@ -154,11 +157,7 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
 
   return (
     <div className="tab-body">
-      <header className="day-header">
-        <p className="muted small">{shortDate(day.date)}{city && ` · ${city}`}</p>
-        <h3>{day.title}</h3>
-        {day.summary && <p>{day.summary}</p>}
-      </header>
+      <DayHeader day={day} city={city} busy={props.busy} onEdit={(changes) => props.onEditDay(day, changes)} />
 
       <section className="slot-group">
         <h4>Getting there</h4>
@@ -166,6 +165,7 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
           <TransitItem
             key={leg.id}
             leg={leg}
+            days={board.days}
             busy={props.busy}
             onEdit={(changes) => props.onEditTransit(leg, changes)}
             onRemove={() => props.onRemoveTransit(leg)}
@@ -185,6 +185,7 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
               key={a.id}
               activity={a}
               place={placeOf(board, a.place_id)}
+              days={board.days}
               chosen={!!gap}
               canMoveUp={!!prev && prev.time_of_day === a.time_of_day}
               canMoveDown={!!next && next.time_of_day === a.time_of_day}

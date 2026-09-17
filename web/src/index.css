@@ -269,3 +269,8 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
 .trash-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
 .trash-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
 .trash-list li p { margin: 2px 0 0; }
+
+/* Day header rename */
+.day-header-title { display: flex; align-items: baseline; gap: 10px; }
+.day-header-title h3 { margin: 2px 0 6px; }
+.day-header.plan-form { margin-bottom: 12px; }

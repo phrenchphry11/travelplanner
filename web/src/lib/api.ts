@@ -265,7 +265,7 @@ export type NewTransit = {
   confirmation_code: string;
   notes: string;
 };
-export type TransitChanges = Partial<NewTransit>;
+export type TransitChanges = Partial<NewTransit> & { day_id?: string };
 
 export type TimeOfDay = "" | "morning" | "afternoon" | "evening";
 export const TIME_OF_DAY_OPTIONS: { value: TimeOfDay; label: string }[] = [
@@ -279,7 +279,9 @@ export function timeOfDayLabel(t: TimeOfDay): string {
 }
 
 export type NewPlan = { name: string; time_of_day: TimeOfDay; address: string; link: string; notes: string };
-export type PlanChanges = { name: string; time_of_day: TimeOfDay; link: string; notes: string };
+export type PlanChanges = { name: string; time_of_day: TimeOfDay; day_id: string; link: string; notes: string };
+
+export type DayChanges = { title: string; summary: string };
 
 export type Board = {
   trip: Trip;

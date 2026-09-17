@@ -115,6 +115,7 @@ def add_transit(
 class TransitUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     method: TransitMethod | None = None
+    day_id: str | None = None  # move this leg to a different day of the same trip
     depart_time: str | None = Field(default=None, max_length=5)
     arrive_time: str | None = Field(default=None, max_length=5)
     link: str | None = Field(default=None, max_length=1000)
@@ -157,6 +158,16 @@ def edit_transit(
         leg.name = body.name
     if body.method is not None:
         leg.method = body.method
+    if body.day_id is not None and body.day_id != leg.day_id:
+        new_day = _member_day(session, body.day_id, user)
+        if new_day.trip_id != leg.trip_id:
+            raise HTTPException(status.HTTP_409_CONFLICT, "That day isn't on this trip.")
+        leg.day_id = new_day.id
+        day_date = new_day.date  # times below (new or already set) are relative to the new day
+        if leg.depart_at is not None:
+            leg.depart_at = datetime.combine(day_date, leg.depart_at.time())
+        if leg.arrive_at is not None:
+            leg.arrive_at = datetime.combine(day_date, leg.arrive_at.time())
     if body.link is not None:
         leg.booking_url = body.link
     if body.confirmation_code is not None:

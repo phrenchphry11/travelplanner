@@ -329,3 +329,60 @@ def test_worker_skips_research_for_a_removed_request(make_client, engine):
         run_job(s, job, runner=lambda ctx: calls.append(ctx), fetch=lambda p: [])
         assert calls == []
         assert s.get(ResearchJob, out["job_id"]).status == "failed"
+
+
+def test_rename_a_day(make_client):
+    client = make_client()
+    trip_id = _confirm(client)
+    day = _board(client, trip_id)["days"][0]["id"]
+
+    out = client.patch(f"/days/{day}", json={"title": "Arrival day", "summary": "Fly in, settle in."}).json()
+    assert (out["title"], out["summary"]) == ("Arrival day", "Fly in, settle in.")
+
+    board = _board(client, trip_id)
+    assert board["days"][0]["title"] == "Arrival day"
+
+    assert client.patch(f"/days/{day}", json={"title": "  "}).status_code == 422
+    assert client.patch("/days/nope", json={"title": "x"}).status_code == 404
+    stranger = make_client("stranger")
+    assert stranger.patch(f"/days/{day}", json={"title": "mine now"}).status_code == 404
+
+
+def test_move_a_plan_to_another_day(make_client, session):
+    client = make_client()
+    trip_id = _confirm(client)
+    board = _board(client, trip_id)
+    day0, day1 = board["days"][0]["id"], board["days"][1]["id"]
+    plan = _add(client, day0, "Castle", time_of_day="afternoon")
+
+    out = client.patch(f"/activities/{plan['id']}", json={"day_id": day1}).json()
+    assert out["day_id"] == day1
+
+    assert _day_plans(_board(client, trip_id), day0) == []
+    assert _day_plans(_board(client, trip_id), day1) == [("Castle", "afternoon")]
+
+
+def test_moving_a_chosen_plan_keeps_its_gap_on_the_new_day(make_client, engine, session):
+    from app.models import Gap
+
+    client = make_client()
+    trip_id = _confirm(client)
+    board = _board(client, trip_id)
+    day0, day1 = board["days"][0]["id"], board["days"][1]["id"]
+    _, gap = _research(client, engine, trip_id, "activity", [_option("Tasca", activity_kind="meal")], day_index=0)
+    activity_id = client.post(f"/candidates/{gap['candidates'][0]['id']}/choose").json()["resolved_by_id"]
+
+    client.patch(f"/activities/{activity_id}", json={"day_id": day1})
+    session.expire_all()
+    assert session.get(Gap, gap["id"]).day_id == day1
+
+
+def test_move_a_plan_rejects_a_day_from_another_trip(make_client):
+    client = make_client()
+    trip_a = _confirm(client)
+    trip_b = _confirm(client)
+    day_a = _board(client, trip_a)["days"][0]["id"]
+    day_b = _board(client, trip_b)["days"][0]["id"]
+    plan = _add(client, day_a, "Castle")
+
+    assert client.patch(f"/activities/{plan['id']}", json={"day_id": day_b}).status_code == 409

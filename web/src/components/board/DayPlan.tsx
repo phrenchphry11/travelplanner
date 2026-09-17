@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from "react";
-import { timeOfDayLabel, type BoardActivity, type BoardPlace, type PlanChanges } from "../../lib/api";
+import { shortDate, timeOfDayLabel, type BoardActivity, type BoardDay, type BoardPlace, type PlanChanges } from "../../lib/api";
 import { TimeOfDaySelect } from "./AddPlan";
 import PlanItem from "./PlanItem";
 
 type Props = {
   activity: BoardActivity;
   place: BoardPlace | undefined;
+  days: BoardDay[]; // for "Move to" another day
   chosen: boolean; // picked from research options
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -17,13 +18,13 @@ type Props = {
 };
 
 /** One plan on the Day tab, with edit, move, and remove. */
-export default function DayPlan({ activity: a, place, chosen, canMoveUp, canMoveDown, busy, ...actions }: Props) {
+export default function DayPlan({ activity: a, place, days, chosen, canMoveUp, canMoveDown, busy, ...actions }: Props) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<PlanChanges>({ name: a.name, time_of_day: a.time_of_day, link: a.booking_url, notes: a.notes });
+  const [draft, setDraft] = useState<PlanChanges>({ name: a.name, time_of_day: a.time_of_day, day_id: a.day_id, link: a.booking_url, notes: a.notes });
   const [error, setError] = useState<string | null>(null);
 
   function startEditing() {
-    setDraft({ name: a.name, time_of_day: a.time_of_day, link: a.booking_url, notes: a.notes });
+    setDraft({ name: a.name, time_of_day: a.time_of_day, day_id: a.day_id, link: a.booking_url, notes: a.notes });
     setError(null);
     setEditing(true);
   }
@@ -53,6 +54,18 @@ export default function DayPlan({ activity: a, place, chosen, canMoveUp, canMove
           When?
           <TimeOfDaySelect value={draft.time_of_day} onChange={(t) => setDraft({ ...draft, time_of_day: t })} disabled={busy} />
         </label>
+        {days.length > 1 && (
+          <label>
+            Day
+            <select value={draft.day_id} onChange={(e) => setDraft({ ...draft, day_id: e.target.value })} disabled={busy}>
+              {days.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {shortDate(d.date)} · {d.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           Link
           <input value={draft.link} onChange={(e) => setDraft({ ...draft, link: e.target.value })} maxLength={1000} inputMode="url" disabled={busy} />

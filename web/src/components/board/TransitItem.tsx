@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { TRANSIT_METHODS, type BoardTransit, type TransitChanges, type TransitMethod } from "../../lib/api";
+import { shortDate, TRANSIT_METHODS, type BoardDay, type BoardTransit, type TransitChanges, type TransitMethod } from "../../lib/api";
 import PlanItem from "./PlanItem";
 
 type Props = {
   leg: BoardTransit;
+  days: BoardDay[]; // for "Move to" another day
   busy: boolean;
   onEdit: (changes: TransitChanges) => Promise<void>;
   onRemove: () => void;
@@ -12,14 +13,14 @@ type Props = {
 const METHOD_LABEL: Record<string, string> = Object.fromEntries(TRANSIT_METHODS.map((m) => [m.value, m.label]));
 
 /** One transit leg, with inline edit and remove. */
-export default function TransitItem({ leg, busy, ...actions }: Props) {
+export default function TransitItem({ leg, days, busy, ...actions }: Props) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<TransitChanges>({});
   const [error, setError] = useState<string | null>(null);
 
   function startEditing() {
     setDraft({
-      name: leg.name, method: leg.method, depart_time: leg.depart_time, arrive_time: leg.arrive_time,
+      name: leg.name, method: leg.method, day_id: leg.day_id, depart_time: leg.depart_time, arrive_time: leg.arrive_time,
       link: leg.booking_url, confirmation_code: leg.confirmation_code, notes: leg.notes,
     });
     setError(null);
@@ -57,6 +58,18 @@ export default function TransitItem({ leg, busy, ...actions }: Props) {
             ))}
           </select>
         </label>
+        {days.length > 1 && (
+          <label>
+            Day
+            <select value={draft.day_id} onChange={(e) => setDraft({ ...draft, day_id: e.target.value })} disabled={busy}>
+              {days.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {shortDate(d.date)} · {d.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="form-row">
           <label>
             Departs

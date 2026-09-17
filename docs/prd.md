@@ -247,6 +247,15 @@ Implemented (2026-09-16):
   list opening today's day while traveling, links to booking, website and
   Google Maps. Sets `robots: noindex` and `referrer: no-referrer` meta tags.
 
+### Full day editing (2026-09-17)
+
+A day can be renamed (title, summary) any time, via an inline edit on the
+Day tab's header. A plan or a transit leg can be moved to a different day
+of the same trip, via a "Day" select in its edit form; a plan chosen from
+a gap takes the gap with it, so "Change" still points at the right day.
+Moving a transit leg keeps its clock time and shifts only the date.
+Closes the manual add/edit epic (travelplanner-uaa).
+
 ### Manual transit (2026-09-17)
 
 Transit is manual-only in v1 (PRD scope table): a "Getting there" section

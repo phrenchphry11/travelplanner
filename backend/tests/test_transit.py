@@ -109,3 +109,29 @@ def test_cannot_manage_transit_on_a_deleted_trip(make_client):
     assert _add(client, day_id).status_code == 404
     assert client.patch(f"/transit/{leg_id}", json={"name": "x"}).status_code == 404
     assert client.delete(f"/transit/{leg_id}").status_code == 404
+
+
+def test_move_transit_to_another_day_shifts_the_date_keeps_the_clock_time(make_client, session):
+    client = make_client()
+    trip_id = _confirm(client, cities=CITIES)
+    board = client.get(f"/trips/{trip_id}/board").json()
+    day0, day1 = board["days"][0]["id"], board["days"][1]["id"]
+    leg_id = _add(client, day0, depart_time="10:47", arrive_time="12:55").json()["id"]
+
+    out = client.patch(f"/transit/{leg_id}", json={"day_id": day1}).json()
+    assert out["day_id"] == day1
+    assert (out["depart_time"], out["arrive_time"]) == ("10:47", "12:55")  # clock time carries over
+
+    leg = session.get(Transit, leg_id)
+    assert leg.depart_at.date().isoformat() == board["days"][1]["date"]  # but the date itself moved
+
+
+def test_move_transit_rejects_a_day_from_another_trip(make_client):
+    client = make_client()
+    trip_a = _confirm(client, cities=CITIES)
+    trip_b = _confirm(client, cities=CITIES)
+    day_a = client.get(f"/trips/{trip_a}/board").json()["days"][0]["id"]
+    day_b = client.get(f"/trips/{trip_b}/board").json()["days"][0]["id"]
+    leg_id = _add(client, day_a).json()["id"]
+
+    assert client.patch(f"/transit/{leg_id}", json={"day_id": day_b}).status_code == 409
