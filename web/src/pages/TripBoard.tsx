@@ -355,19 +355,6 @@ export default function TripBoard() {
             />
           ) : (
             <>
-              {board.days.length > 0 && (
-                <label className="day-picker">
-                  <span className="muted small">Day</span>
-                  <select value={selectedDay?.date ?? ""} onChange={(e) => nav({ tab: "day", day: e.target.value, gap: null })}>
-                    {board.days.map((d) => (
-                      <option key={d.id} value={d.date}>
-                        {new Date(`${d.date}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · {d.title}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-
               <nav className="tabs" role="tablist" aria-label="Trip views">
                 {TABS.map((t) => (
                   <button
@@ -384,7 +371,21 @@ export default function TripBoard() {
               </nav>
 
               {tab === "overview" && <OverviewTab board={board} onOpenDay={openDay} onOpenGap={openGapDrawer} />}
-              {tab === "day" && selectedDay && <DayTab board={board} day={selectedDay} {...gapProps} {...planProps} />}
+              {tab === "day" && selectedDay && (
+                <>
+                  <label className="day-picker">
+                    <span className="muted small">Day</span>
+                    <select value={selectedDay.date} onChange={(e) => nav({ tab: "day", day: e.target.value, gap: null })}>
+                      {board.days.map((d) => (
+                        <option key={d.id} value={d.date}>
+                          {new Date(`${d.date}T00:00`).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })} · {d.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <DayTab board={board} day={selectedDay} {...gapProps} {...planProps} />
+                </>
+              )}
               {tab === "lodging" && <LodgingTab board={board} onOpenDay={openDay} {...gapProps} />}
               {tab === "activities" && <ActivitiesTab board={board} onOpenDay={openDay} />}
             </>
