@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import CompareDrawer from "../components/board/CompareDrawer";
 import ConfirmDialog from "../components/ConfirmDialog";
+import ShareDialog from "../components/ShareDialog";
 import { ActivitiesTab, DayTab, LodgingTab, OverviewTab } from "../components/board/tabs";
 import TripMap, { type MapOption } from "../components/board/TripMap";
 import TopBar from "../components/TopBar";
@@ -40,6 +41,9 @@ export default function TripBoard() {
   const [busy, setBusy] = useState(false);
   const [hoveredCandidateId, setHoveredCandidateId] = useState<string | null>(null);
   const [pendingChange, setPendingChange] = useState<BoardGap | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState<string | null>(null);
   const polls = useRef(0);
 
   const load = useCallback(async () => {
@@ -166,6 +170,20 @@ export default function TripBoard() {
     };
   }
 
+  async function share(method: "POST" | "DELETE", path = "") {
+    if (!board) return;
+    setShareBusy(true);
+    setShareError(null);
+    try {
+      await api(`/trips/${board.trip.id}/share${path}`, { method });
+      await load();
+    } catch (e) {
+      setShareError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
   async function deleteTrip() {
     if (!board || !window.confirm(`Delete "${board.trip.title}"? This can't be undone.`)) return;
     await act(() => api(`/trips/${board.trip.id}`, { method: "DELETE" }));
@@ -217,9 +235,21 @@ export default function TripBoard() {
             {board.trip.open_gap_count === 0 ? "Nothing missing" : `${board.trip.open_gap_count} things still missing`}
           </p>
         </div>
-        <button type="button" className="danger small-button" onClick={deleteTrip} disabled={busy}>
-          Delete trip
-        </button>
+        <div className="board-actions">
+          <button
+            type="button"
+            className="small-button"
+            onClick={() => {
+              setShareError(null);
+              setShareOpen(true);
+            }}
+          >
+            Share{board.trip.share_slug && <span className="share-on"> · link on</span>}
+          </button>
+          <button type="button" className="danger small-button" onClick={deleteTrip} disabled={busy}>
+            Delete trip
+          </button>
+        </div>
       </div>
       {error && <p className="error">{error}</p>}
 
@@ -293,6 +323,17 @@ export default function TripBoard() {
           )}
         </section>
       </div>
+
+      <ShareDialog
+        open={shareOpen}
+        slug={board.trip.share_slug}
+        busy={shareBusy}
+        error={shareError}
+        onPublish={() => share("POST")}
+        onRegenerate={() => share("POST", "/regenerate")}
+        onUnpublish={() => share("DELETE")}
+        onClose={() => setShareOpen(false)}
+      />
 
       <ConfirmDialog
         open={pendingChange !== null}
