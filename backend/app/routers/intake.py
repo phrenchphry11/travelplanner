@@ -171,4 +171,4 @@ def confirm_draft(
     session.commit()
     session.refresh(trip)
     background.add_task(locate, trip.id)
-    return to_trip_out(trip, open_gap_count=len(gaps))
+    return to_trip_out(trip, user.id, open_gap_count=len(gaps))

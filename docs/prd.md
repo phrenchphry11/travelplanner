@@ -281,6 +281,22 @@ worker (hourly check) permanently removes a trashed trip and everything
 in it, children first. Deleting and restoring are owner-only, matching
 delete's existing rule.
 
+### Co-collaborators (2026-09-17)
+
+The trip owner can invite other people to plan together, by email, via a
+"Collaborators" dialog on the board. If the invitee has used the app
+before, they're added as an editor right away. Otherwise it saves a
+pending invite; they get access automatically the next time they sign in
+with that email, no separate accept step. Collaborators can do everything
+an owner can on the trip's content (add/edit places, lodging, activities,
+transit, request research) via the existing membership checks; deleting
+the trip, restoring it, and managing the public share link stay
+owner-only. The owner can remove a collaborator or cancel a pending
+invite; the owner can't be removed. `TripOut` now carries `is_owner` so
+the UI knows which controls to show. Nothing sends an actual email yet
+(see the follow-up task); the invitee has to be told out of band to sign
+in.
+
 ## 6. Agent behavior
 
 **Intake agent** (synchronous, in the API): parses free text into a structured

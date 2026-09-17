@@ -274,3 +274,9 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
 .day-header-title { display: flex; align-items: baseline; gap: 10px; }
 .day-header-title h3 { margin: 2px 0 6px; }
 .day-header.plan-form { margin-bottom: 12px; }
+
+/* Collaborators */
+.collaborator-list { list-style: none; padding: 0; margin: 0 0 14px; display: grid; gap: 6px; }
+.collaborator-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfaf7; }
+.invite-form { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+.invite-form input { font: inherit; padding: 8px 10px; border: 1px solid #cfc8bb; border-radius: 8px; min-width: 0; }

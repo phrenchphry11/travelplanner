@@ -54,7 +54,12 @@ export type Trip = {
   open_gap_count: number;
   share_slug: string | null; // set while a read-only link is published
   deleted_at: string | null; // set while the trip is in the trash
+  is_owner: boolean; // false for an invited collaborator
 };
+
+export type Collaborator = { user_id: string; display_name: string; email: string; role: "owner" | "editor" };
+export type PendingInvite = { id: string; email: string; role: string };
+export type Collaborators = { members: Collaborator[]; invites: PendingInvite[] };
 
 const TRASH_DAYS = 30;
 

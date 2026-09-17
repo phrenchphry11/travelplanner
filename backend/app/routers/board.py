@@ -193,7 +193,7 @@ def get_board(
 
     missing = {g.id for g in gaps if counts_as_missing(g, days_with_plans)}
     return Board(
-        trip=to_trip_out(trip, open_gap_count=len(missing)),
+        trip=to_trip_out(trip, user.id, open_gap_count=len(missing)),
         days=[BoardDay(id=d.id, date=d.date, title=d.title, summary=d.summary, base_place_id=d.base_place_id) for d in days],
         places=[
             BoardPlace(

@@ -81,14 +81,20 @@ def make_client(engine):
             yield s
 
     def _user(request: Request):
+        from app.collaborators import redeem_invites
+
         user_id = request.headers["x-test-user"]
         with Session(engine) as s:
             user = s.get(User, user_id)
             if user is None:
+                # Mirrors app.auth.current_user: a brand-new user gets any invites
+                # waiting for their email redeemed right away.
                 user = User(id=user_id, email=f"{user_id}@example.com")
                 s.add(user)
                 s.commit()
                 s.refresh(user)
+                redeem_invites(s, user)
+                s.refresh(user)  # redeem_invites may have committed again, which expires attributes
             return user
 
     app.dependency_overrides[get_session] = _session

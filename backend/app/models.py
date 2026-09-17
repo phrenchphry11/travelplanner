@@ -63,6 +63,22 @@ class TripMember(SQLModel, table=True):
     role: str = "editor"  # owner | editor | viewer
 
 
+class TripInvite(SQLModel, table=True):
+    """A collaborator invited by email who hasn't signed in yet.
+
+    Redeemed into a TripMember automatically the first time someone signs in
+    with a matching email (see app.collaborators.redeem_invites).
+    """
+    __tablename__ = "trip_invites"
+    id: str = Field(default_factory=new_id, primary_key=True)
+    trip_id: str = Field(foreign_key="trips.id", index=True)
+    email: str = Field(index=True)  # lowercased
+    role: str = "editor"
+    invited_by: str = Field(foreign_key="users.id")
+    created_at: datetime = Field(default_factory=utcnow)
+    accepted_at: datetime | None = None
+
+
 class Place(SQLModel, table=True):
     __tablename__ = "places"
     id: str = Field(default_factory=new_id, primary_key=True)

@@ -99,3 +99,41 @@ def test_authorized_parties_setting_overrides_cors_origins():
     s = Settings(cors_origins="https://a.example", authorized_parties="https://b.example/, https://c.example")
     assert s.authorized_party_list == ["https://b.example", "https://c.example"]
     assert Settings(cors_origins="https://a.example").authorized_party_list == ["https://a.example"]
+
+
+def test_signing_in_stores_email_lowercase_and_redeems_a_case_mismatched_invite(signer, engine):
+    """Regression: a Clerk email of different case than a pending invite used to leave
+    the invite stranded forever, since redemption only runs at sign-in time."""
+    from sqlmodel import Session, select
+
+    from app.models import Trip, TripInvite, TripMember, User
+
+    def _session():
+        with Session(engine) as s:
+            yield s
+
+    app.dependency_overrides[get_session] = _session
+    try:
+        with Session(engine) as s:
+            owner = User(id="owner", email="owner@example.com")
+            s.add(owner)
+            s.flush()
+            trip = Trip(owner_id="owner", title="Portugal")
+            s.add(trip)
+            s.flush()
+            s.add(TripMember(trip_id=trip.id, user_id="owner", role="owner"))
+            s.add(TripInvite(trip_id=trip.id, email="person@example.com", invited_by="owner"))
+            s.commit()
+            trip_id = trip.id
+
+        client = TestClient(app)
+        res = client.get("/me", headers={"Authorization": f"Bearer {signer(sub='user_mixed', email='Person@Example.COM')}"})
+        assert res.status_code == 200
+        assert res.json()["email"] == "person@example.com"  # stored lowercase, not as Clerk sent it
+
+        with Session(engine) as s:
+            assert s.get(TripMember, (trip_id, "user_mixed")) is not None
+            invite = s.exec(select(TripInvite).where(TripInvite.trip_id == trip_id)).one()
+            assert invite.accepted_at is not None
+    finally:
+        app.dependency_overrides.clear()

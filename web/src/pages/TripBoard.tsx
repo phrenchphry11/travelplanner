@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import CompareDrawer from "../components/board/CompareDrawer";
 import ConfirmDialog from "../components/ConfirmDialog";
+import CollaboratorsDialog from "../components/CollaboratorsDialog";
 import ShareDialog from "../components/ShareDialog";
 import { ActivitiesTab, DayTab, LodgingTab, OverviewTab, SavedPlacesTab } from "../components/board/tabs";
 import TripMap, { type MapOption } from "../components/board/TripMap";
@@ -20,6 +21,7 @@ import {
   type BoardGap,
   type BoardPlace,
   type BoardTransit,
+  type Collaborators,
   type DayChanges,
   type NewLodging,
   type NewTransit,
@@ -58,6 +60,10 @@ export default function TripBoard() {
   const [shareOpen, setShareOpen] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
+  const [collabOpen, setCollabOpen] = useState(false);
+  const [collaborators, setCollaborators] = useState<Collaborators | null>(null);
+  const [collabBusy, setCollabBusy] = useState(false);
+  const [collabError, setCollabError] = useState<string | null>(null);
   const [pendingRemove, setPendingRemove] = useState<BoardActivity | null>(null);
   const [pendingDismiss, setPendingDismiss] = useState<BoardGap | null>(null);
   const [pendingRemovePlace, setPendingRemovePlace] = useState<BoardPlace | null>(null);
@@ -278,6 +284,57 @@ export default function TripBoard() {
     };
   }
 
+  async function loadCollaborators() {
+    if (!board) return;
+    try {
+      setCollaborators(await api<Collaborators>(`/trips/${board.trip.id}/collaborators`));
+    } catch (e) {
+      setCollabError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  function openCollaborators() {
+    setCollabError(null);
+    setCollabOpen(true);
+    void loadCollaborators();
+  }
+
+  async function inviteCollaborator(email: string) {
+    if (!board) return;
+    setCollabBusy(true);
+    try {
+      setCollaborators(await api<Collaborators>(`/trips/${board.trip.id}/collaborators`, { method: "POST", body: JSON.stringify({ email }) }));
+    } finally {
+      setCollabBusy(false);
+    }
+  }
+
+  async function removeMember(userId: string) {
+    if (!board) return;
+    setCollabBusy(true);
+    setCollabError(null);
+    try {
+      setCollaborators(await api<Collaborators>(`/trips/${board.trip.id}/collaborators/${userId}`, { method: "DELETE" }));
+    } catch (e) {
+      setCollabError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCollabBusy(false);
+    }
+  }
+
+  async function cancelInvite(inviteId: string) {
+    if (!board) return;
+    setCollabBusy(true);
+    setCollabError(null);
+    try {
+      setCollaborators(await api<Collaborators>(`/trips/${board.trip.id}/invites/${inviteId}`, { method: "DELETE" }));
+    } catch (e) {
+      setCollabError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCollabBusy(false);
+    }
+  }
+
   async function share(method: "POST" | "DELETE", path = "") {
     if (!board) return;
     setShareBusy(true);
@@ -358,19 +415,26 @@ export default function TripBoard() {
           </p>
         </div>
         <div className="board-actions">
-          <button
-            type="button"
-            className="small-button"
-            onClick={() => {
-              setShareError(null);
-              setShareOpen(true);
-            }}
-          >
-            Share{board.trip.share_slug && <span className="share-on"> · link on</span>}
+          <button type="button" className="small-button" onClick={openCollaborators}>
+            Collaborators
           </button>
-          <button type="button" className="danger small-button" onClick={() => setPendingDeleteTrip(true)} disabled={busy}>
-            Delete trip
-          </button>
+          {board.trip.is_owner && (
+            <button
+              type="button"
+              className="small-button"
+              onClick={() => {
+                setShareError(null);
+                setShareOpen(true);
+              }}
+            >
+              Share{board.trip.share_slug && <span className="share-on"> · link on</span>}
+            </button>
+          )}
+          {board.trip.is_owner && (
+            <button type="button" className="danger small-button" onClick={() => setPendingDeleteTrip(true)} disabled={busy}>
+              Delete trip
+            </button>
+          )}
         </div>
       </div>
       {error && <p className="error">{error}</p>}
@@ -457,6 +521,18 @@ export default function TripBoard() {
           )}
         </section>
       </div>
+
+      <CollaboratorsDialog
+        open={collabOpen}
+        isOwner={board.trip.is_owner}
+        collaborators={collaborators}
+        busy={collabBusy}
+        error={collabError}
+        onInvite={inviteCollaborator}
+        onRemoveMember={removeMember}
+        onCancelInvite={cancelInvite}
+        onClose={() => setCollabOpen(false)}
+      />
 
       <ShareDialog
         open={shareOpen}

@@ -39,9 +39,10 @@ class TripOut(BaseModel):
     open_gap_count: int = 0
     share_slug: str | None = None  # set while the trip is published
     deleted_at: datetime | None = None  # set while the trip is in the trash
+    is_owner: bool = False  # whether the signed-in user owns this trip, vs. an invited collaborator
 
 
-def to_trip_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
+def to_trip_out(trip: Trip, user_id: str, open_gap_count: int = 0) -> TripOut:
     return TripOut(
         id=trip.id,
         title=trip.title,
@@ -51,6 +52,7 @@ def to_trip_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
         open_gap_count=open_gap_count,
         share_slug=trip.share_slug,
         deleted_at=trip.deleted_at,
+        is_owner=trip.owner_id == user_id,
     )
 
 
@@ -94,7 +96,7 @@ def list_trips(
         )
     )
     counts = _open_gap_counts(session, [t.id for t in trips])
-    return [to_trip_out(t, counts.get(t.id, 0)) for t in trips]
+    return [to_trip_out(t, user.id, counts.get(t.id, 0)) for t in trips]
 
 
 @router.post("", response_model=TripOut, status_code=status.HTTP_201_CREATED)
@@ -111,7 +113,7 @@ def create_trip(
     session.add(TripMember(trip_id=trip.id, user_id=user.id, role="owner"))
     session.commit()
     session.refresh(trip)
-    return to_trip_out(trip)
+    return to_trip_out(trip, user.id)
 
 
 @router.get("/{trip_id}", response_model=TripOut)
@@ -121,7 +123,7 @@ def get_trip(
     session: Session = Depends(get_session),
 ) -> TripOut:
     trip = get_member_trip(session, trip_id, user)
-    return to_trip_out(trip, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
+    return to_trip_out(trip, user.id, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
 
 
 @router.delete("/{trip_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -154,7 +156,7 @@ def restore_trip(
     session.add(trip)
     session.commit()
     session.refresh(trip)
-    return to_trip_out(trip, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
+    return to_trip_out(trip, user.id, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
 
 
 class DayOut(BaseModel):

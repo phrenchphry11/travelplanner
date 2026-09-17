@@ -15,6 +15,7 @@ from fastapi import Depends, HTTPException, Request, status
 from jwt import PyJWKClient
 from sqlmodel import Session
 
+from app.collaborators import redeem_invites
 from app.config import get_settings
 from app.db import get_session
 from app.models import User
@@ -73,16 +74,20 @@ def current_user(
     claims = decode_clerk_token(_bearer_token(request))
     user_id = claims["sub"]
     user = session.get(User, user_id)
-    email = claims.get("email") or ""
+    email = (claims.get("email") or "").strip().lower()  # normalized so it always matches an invite
     display_name = claims.get("name") or claims.get("first_name") or ""
     if user is None:
         user = User(id=user_id, email=email, display_name=display_name)
         session.add(user)
         session.commit()
         session.refresh(user)
+        redeem_invites(session, user)
     elif (email and user.email != email) or (display_name and user.display_name != display_name):
+        email_changed = bool(email and user.email != email)
         user.email = email or user.email
         user.display_name = display_name or user.display_name
         session.add(user)
         session.commit()
+        if email_changed:
+            redeem_invites(session, user)
     return user
