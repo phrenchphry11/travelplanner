@@ -1,13 +1,14 @@
 import type { LatLngBoundsExpression, LatLngTuple } from "leaflet";
 import { useEffect, useMemo } from "react";
 import { CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap } from "react-leaflet";
-import type { BoardCandidate, BoardDay, BoardPlace } from "../../lib/api";
+import type { BoardCandidate, BoardDay, BoardLodging, BoardPlace } from "../../lib/api";
 
 export type MapOption = { candidate: BoardCandidate; place: BoardPlace };
 
 type Props = {
   days: BoardDay[];
   places: BoardPlace[];
+  lodgings: BoardLodging[];
   chosenPlaceIds: Set<string>;
   selectedPlaceId: string | null;
   onSelectPlace: (placeId: string) => void;
@@ -37,37 +38,63 @@ function FitToPoints({ points }: { points: LatLngTuple[] }) {
 
 const hasCoords = (p: BoardPlace) => p.lat !== null && p.lng !== null;
 
+type Stop = { point: LatLngTuple; label: string; hotelPlaceId: string | null };
+
 export default function TripMap(props: Props) {
-  const { days, places, chosenPlaceIds, selectedPlaceId, options, highlightedCandidateId } = props;
-  const cities = useMemo(() => places.filter((p) => p.kind === "city" && hasCoords(p)), [places]);
-  const chosen = useMemo(() => places.filter((p) => chosenPlaceIds.has(p.id) && hasCoords(p)), [places, chosenPlaceIds]);
+  const { days, places, lodgings, chosenPlaceIds, selectedPlaceId, options, highlightedCandidateId } = props;
 
-  const route = useMemo(() => {
-    const byId = new Map(cities.map((p) => [p.id, p]));
-    const points: LatLngTuple[] = [];
-    let lastId: string | null = null;
+  // Where each base place "is" on the map. A chosen, pinned hotel beats the city
+  // lookup, which matters for vague bases like "Central France".
+  const { stops, route } = useMemo(() => {
+    const byId = new Map(places.map((p) => [p.id, p]));
+    const pinned = (p?: BoardPlace): p is BoardPlace => !!p && p.lat !== null && p.lng !== null;
+    const stayFor = (date: string) => lodgings.find((l) => l.check_in <= date && date < l.check_out);
+
+    const stops = new Map<string, Stop>();
+    const routePoints: LatLngTuple[] = [];
+    let lastKey = "";
     for (const day of days) {
-      const place = day.base_place_id ? byId.get(day.base_place_id) : undefined;
-      if (!place || place.id === lastId) continue;
-      points.push([place.lat!, place.lng!]);
-      lastId = place.id;
+      if (!day.base_place_id) continue;
+      const city = byId.get(day.base_place_id);
+      const hotel = byId.get(stayFor(day.date)?.place_id ?? "");
+      const existing = stops.get(day.base_place_id);
+      if (pinned(hotel) && (!existing || !existing.hotelPlaceId)) {
+        stops.set(day.base_place_id, {
+          point: [hotel.lat!, hotel.lng!],
+          label: city ? `${city.name} · ${hotel.name}` : hotel.name,
+          hotelPlaceId: hotel.id,
+        });
+      } else if (!existing && pinned(city)) {
+        stops.set(day.base_place_id, { point: [city.lat!, city.lng!], label: city.name, hotelPlaceId: null });
+      }
+      const point: LatLngTuple | null = pinned(hotel) ? [hotel.lat!, hotel.lng!] : stops.get(day.base_place_id)?.point ?? null;
+      if (!point) continue;
+      const key = point.join(",");
+      if (key !== lastKey) routePoints.push(point);
+      lastKey = key;
     }
-    return points;
-  }, [days, cities]);
+    return { stops, route: routePoints };
+  }, [days, places, lodgings]);
 
-  // With options open, zoom to them (plus the day's city); otherwise the whole trip.
+  const stopHotelIds = useMemo(() => new Set([...stops.values()].map((s) => s.hotelPlaceId).filter(Boolean)), [stops]);
+  const chosen = useMemo(
+    () => places.filter((p) => chosenPlaceIds.has(p.id) && hasCoords(p) && !stopHotelIds.has(p.id)),
+    [places, chosenPlaceIds, stopHotelIds],
+  );
+
+  // With options open, zoom to them (plus the day's stop); otherwise the whole trip.
   const fitPoints: LatLngTuple[] = useMemo(() => {
     if (options.length > 0) {
       const pts = options.map((o) => [o.place.lat!, o.place.lng!] as LatLngTuple);
-      const city = cities.find((c) => c.id === selectedPlaceId);
-      if (city) pts.push([city.lat!, city.lng!]);
+      const stop = selectedPlaceId ? stops.get(selectedPlaceId) : undefined;
+      if (stop) pts.push(stop.point);
       return pts;
     }
-    return cities.map((p) => [p.lat!, p.lng!] as LatLngTuple);
-  }, [options, cities, selectedPlaceId]);
+    return [...stops.values()].map((s) => s.point);
+  }, [options, stops, selectedPlaceId]);
 
   const locating = places.some((p) => p.kind === "city" && p.locating);
-  const missing = places.filter((p) => p.kind === "city" && p.lat === null && !p.locating);
+  const missing = places.filter((p) => p.kind === "city" && !stops.has(p.id) && !p.locating);
 
   return (
     <div className="map-frame">
@@ -79,18 +106,18 @@ export default function TripMap(props: Props) {
         <FitToPoints points={fitPoints} />
         {route.length > 1 && <Polyline positions={route} pathOptions={{ color: COLORS.city, weight: 3, dashArray: "6 6" }} />}
 
-        {cities.map((p) => {
-          const selected = p.id === selectedPlaceId;
+        {[...stops.entries()].map(([placeId, stop]) => {
+          const selected = placeId === selectedPlaceId;
           return (
             <CircleMarker
-              key={p.id}
-              center={[p.lat!, p.lng!]}
+              key={placeId}
+              center={stop.point}
               radius={selected ? 11 : 8}
-              pathOptions={{ color: "#fff", weight: 2, fillColor: selected ? COLORS.selectedCity : COLORS.city, fillOpacity: 1 }}
-              eventHandlers={{ click: () => props.onSelectPlace(p.id) }}
+              pathOptions={{ color: "#fff", weight: 2, fillColor: selected ? COLORS.selectedCity : stop.hotelPlaceId ? COLORS.chosen : COLORS.city, fillOpacity: 1 }}
+              eventHandlers={{ click: () => props.onSelectPlace(placeId) }}
             >
               <Tooltip direction="top" offset={[0, -8]} permanent={selected && options.length === 0}>
-                {p.name}
+                {stop.label}
               </Tooltip>
             </CircleMarker>
           );

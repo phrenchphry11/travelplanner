@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -28,7 +29,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.db import engine
-from app.models import GeocodeCache, Place, Trip, utcnow
+from app.models import Candidate, Day, Gap, GeocodeCache, Place, Trip, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -149,18 +150,44 @@ def country_codes_for(session: Session, destinations: list[str], fetch: Fetcher)
     return codes
 
 
-def locate_city(session: Session, city: str, country_codes: list[str], fetch: Fetcher) -> GeoResult | None:
-    attempts: list[dict] = []
+MAX_TRIP_SPREAD_KM = 1500.0
+
+
+def locate_city(
+    session: Session,
+    city: str,
+    country_codes: list[str],
+    fetch: Fetcher,
+    nearby: list[tuple[float, float]] | None = None,
+) -> GeoResult | None:
+    """Pin a trip's base place.
+
+    Tries a town/city in the trip's countries, then an administrative area in
+    those countries, then a town/city anywhere. The last step must still be
+    near the trip: in one of its countries, or within MAX_TRIP_SPREAD_KM of the
+    trip's other pinned cities. Otherwise vague names like "Central France"
+    match far-away places (it matched Ville de France in Goiânia, Brazil).
+    """
+    nearby = nearby or []
+    limits = ",".join(sorted(country_codes))
     if country_codes:
-        attempts.append({"q": city, "featureType": "settlement", "countrycodes": ",".join(sorted(country_codes))})
-    attempts.append({"q": city, "featureType": "settlement"})
-    if country_codes:
-        # Regions and districts (not towns) inside the trip's countries.
-        attempts.append({"q": city, "countrycodes": ",".join(sorted(country_codes)), "limit": 5})
-    for params in attempts:
-        result = cached_lookup(session, params, fetch)
+        result = cached_lookup(session, {"q": city, "featureType": "settlement", "countrycodes": limits}, fetch)
         if result:
             return result
+        # Regions and districts (not towns) inside the trip's countries.
+        result = cached_lookup(session, {"q": city, "countrycodes": limits, "limit": 5}, fetch)
+        if result:
+            return result
+    result = cached_lookup(session, {"q": city, "featureType": "settlement"}, fetch)
+    if result is None:
+        return None
+    if country_codes and result.country_code in country_codes:
+        return result
+    if nearby and min(distance_km(n, (result.lat, result.lng)) for n in nearby) <= MAX_TRIP_SPREAD_KM:
+        return result
+    if not country_codes and not nearby:
+        return result  # nothing to compare against
+    log.info("ignoring %r for %r: not near the trip", result.display_name, city)
     return None
 
 
@@ -173,6 +200,14 @@ def distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * 6371.0 * math.asin(math.sqrt(h))
 
 
+_NAME_BREAKS = re.compile(r"\s*(?:\(|–|—|,|:|\bcity cent(?:re|er)\b|\bloop\b|\bday trip\b|\bwalk\b|\btour\b)", re.IGNORECASE)
+
+
+def leading_place(name: str) -> str:
+    """'Clermont-Ferrand city centre (Place de Jaude area)' -> 'Clermont-Ferrand'."""
+    return _NAME_BREAKS.split(name, maxsplit=1)[0].strip()
+
+
 def locate_option(
     session: Session,
     name: str,
@@ -181,23 +216,35 @@ def locate_option(
     country_codes: list[str],
     near: tuple[float, float] | None,
     fetch: Fetcher,
+    map_query: str | None = None,
 ) -> GeoResult | None:
-    """Find a research option (a hotel, restaurant, sight) on the map.
+    """Find a research option (a hotel, restaurant, sight, area) on the map.
 
-    Unlike cities, a named place *should* be searched with its city, because
-    the place is what we want. The guard is distance instead: a result is only
-    kept if it's within MAX_OPTION_DISTANCE_KM of the day's base city. With no
-    base coordinates, it must at least be in one of the trip's countries.
+    Tries, in order: its address, the searchable `map_query` research gave, its
+    name with the day's city, then the town at the start of its name as a
+    settlement (a city-level pin for descriptive names like "Blois–Chambord
+    loop"). Every result must be within MAX_OPTION_DISTANCE_KM of the day's
+    base city, or, with no base pin, in one of the trip's countries.
     """
     if near is None and not country_codes:
         return None  # nothing to sanity-check against; better no pin than a wrong one
     limits = {"countrycodes": ",".join(sorted(country_codes))} if country_codes else {}
-    queries = []
+
+    def with_city(q: str) -> str:
+        return q if (not city or city.casefold() in q.casefold()) else f"{q}, {city}"
+
+    attempts: list[tuple[dict, Callable[[GeoResult], bool]]] = []
     if address:
-        queries.append(address if (not city or city.casefold() in address.casefold()) else f"{address}, {city}")
-    queries.append(f"{name}, {city}" if city else name)
-    for q in queries:
-        result = cached_lookup(session, {"q": q, **limits}, fetch, accept=is_located_poi)
+        attempts.append(({"q": with_city(address), **limits}, is_located_poi))
+    if map_query:
+        attempts.append(({"q": map_query, **limits}, is_located_poi))
+    attempts.append(({"q": with_city(name), **limits}, is_located_poi))
+    town = leading_place(name)
+    if town and town.casefold() != name.casefold():
+        attempts.append(({"q": town, "featureType": "settlement", **limits}, is_area))
+
+    for params, accept in attempts:
+        result = cached_lookup(session, params, fetch, accept=accept)
         if result is None:
             continue
         if near is not None and distance_km(near, (result.lat, result.lng)) > MAX_OPTION_DISTANCE_KM:
@@ -215,12 +262,13 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def needs_lookup(place: Place, now: datetime | None = None) -> bool:
-    """Never tried, or tried without a result long enough ago to retry.
+    """Unpinned, and never tried or tried long enough ago to retry. Applies to
+    city places and to option/chosen places (hotels, restaurants).
 
     Not-found answers are cached, so a retry only reaches the network when the
     earlier attempt failed with a network or server error.
     """
-    if place.kind != "city" or place.lat is not None:
+    if place.lat is not None:
         return False
     if place.geocoded_at is None:
         return True
@@ -228,12 +276,34 @@ def needs_lookup(place: Place, now: datetime | None = None) -> bool:
     return now - _as_utc(place.geocoded_at) >= RETRY_AFTER
 
 
+def _claim(session: Session, place: Place) -> bool:
+    """Compare-and-set geocoded_at so concurrent lookups never duplicate work."""
+    previous = place.geocoded_at
+    claim = update(Place).where(Place.id == place.id).values(geocoded_at=utcnow())
+    claim = claim.where(Place.geocoded_at.is_(None) if previous is None else Place.geocoded_at == previous)
+    claimed = session.exec(claim)
+    session.commit()
+    if claimed.rowcount != 1:
+        return False
+    session.refresh(place)
+    return True
+
+
+def _trip_country_codes(session: Session, trip: Trip, fetch: Fetcher) -> list[str]:
+    try:
+        return country_codes_for(session, list(trip.destinations or []), fetch)
+    except (httpx.HTTPError, ValueError, KeyError):
+        session.rollback()
+        log.warning("country lookup failed for trip %s; locating without country limits", trip.id, exc_info=True)
+        return []
+
+
 def geocode_trip_places(
     trip_id: str,
     session_factory: Callable[[], Session] = lambda: Session(engine),
     fetch: Fetcher | None = None,
 ) -> None:
-    """Locate a trip's city places that need it.
+    """Pin a trip's base cities, in trip order, then its unpinned options.
 
     Safe to call repeatedly and concurrently: each place is claimed with a
     compare-and-set on geocoded_at before any network call.
@@ -243,29 +313,23 @@ def geocode_trip_places(
         trip = session.get(Trip, trip_id)
         if trip is None:
             return
-        places = session.exec(select(Place).where(Place.trip_id == trip_id, Place.kind == "city")).all()
-        if not any(needs_lookup(p) for p in places):
+        cities = session.exec(select(Place).where(Place.trip_id == trip_id, Place.kind == "city")).all()
+        options = session.exec(select(Place).where(Place.trip_id == trip_id, Place.kind != "city")).all()
+        if not any(needs_lookup(p) for p in (*cities, *options)):
             return
-        try:
-            codes = country_codes_for(session, list(trip.destinations or []), fetch)
-        except (httpx.HTTPError, ValueError, KeyError):
-            session.rollback()
-            log.warning("country lookup failed for trip %s; locating without country limits", trip_id, exc_info=True)
-            codes = []
+        codes = _trip_country_codes(session, trip, fetch)
 
-        for place in places:
-            if not needs_lookup(place):
+        order = {d.base_place_id: i for i, d in reversed(list(enumerate(
+            session.exec(select(Day).where(Day.trip_id == trip_id).order_by(Day.date)).all()
+        )))}
+        cities = sorted(cities, key=lambda p: order.get(p.id, len(order)))
+        nearby = [(p.lat, p.lng) for p in cities if p.lat is not None and p.lng is not None]
+
+        for place in cities:
+            if not needs_lookup(place) or not _claim(session, place):
                 continue
-            previous = place.geocoded_at
-            claim = update(Place).where(Place.id == place.id).values(geocoded_at=utcnow())
-            claim = claim.where(Place.geocoded_at.is_(None) if previous is None else Place.geocoded_at == previous)
-            claimed = session.exec(claim)
-            session.commit()
-            if claimed.rowcount != 1:
-                continue
-            session.refresh(place)
             try:
-                result = locate_city(session, place.name, codes, fetch)
+                result = locate_city(session, place.name, codes, fetch, nearby)
             except (httpx.HTTPError, ValueError, KeyError):
                 # Leave geocoded_at set: needs_lookup() retries after RETRY_AFTER.
                 session.rollback()
@@ -275,8 +339,42 @@ def geocode_trip_places(
                 place.lat, place.lng, place.precision = result.lat, result.lng, "approximate"
                 session.add(place)
                 session.commit()
+                nearby.append((result.lat, result.lng))
             else:
-                log.info("no settlement or area found for %r (countries %s)", place.name, codes)
+                log.info("no nearby settlement or area found for %r (countries %s)", place.name, codes)
+
+        _locate_options(session, trip_id, [p for p in options if needs_lookup(p)], codes, fetch)
+
+
+def _locate_options(session: Session, trip_id: str, places: list[Place], codes: list[str], fetch: Fetcher) -> None:
+    """Best-effort pins for option and chosen places near their day's base city."""
+    if not places:
+        return
+    by_place = {c.place_id: c for c in session.exec(
+        select(Candidate).where(Candidate.trip_id == trip_id, Candidate.place_id.in_([p.id for p in places]))
+    )}
+    for place in places:
+        candidate = by_place.get(place.id)
+        if candidate is None or not _claim(session, place):
+            continue
+        gap = session.get(Gap, candidate.gap_id)
+        day = session.get(Day, gap.day_id) if gap and gap.day_id else None
+        base = session.get(Place, day.base_place_id) if day and day.base_place_id else None
+        near = (base.lat, base.lng) if base and base.lat is not None and base.lng is not None else None
+        payload = candidate.payload or {}
+        try:
+            result = locate_option(
+                session, payload.get("name") or place.name, payload.get("address") or place.address or None,
+                base.name if base else None, codes, near, fetch, map_query=payload.get("map_query"),
+            )
+        except (httpx.HTTPError, ValueError, KeyError):
+            session.rollback()
+            log.warning("locating option %r failed; will retry later", place.name, exc_info=True)
+            continue
+        if result:
+            place.lat, place.lng, place.precision = result.lat, result.lng, "approximate"
+            session.add(place)
+            session.commit()
 
 
 def get_trip_locator() -> Callable[[str], None]:

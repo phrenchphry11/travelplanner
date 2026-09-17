@@ -15,13 +15,11 @@ from datetime import timedelta
 from sqlalchemy import or_, update
 from sqlmodel import Session, select
 
-import httpx
-
 from app.agents.research import CandidateIn, ResearchContext, ResearchError, ResearchRunner, research_gap
 from app.config import get_settings
 from app.db import engine
 from app import geocoding
-from app.geocoding import Fetcher, country_codes_for, locate_option
+from app.geocoding import Fetcher
 from app.models import Candidate, Day, Gap, Place, ResearchJob, Source, Trip, utcnow
 
 log = logging.getLogger("worker")
@@ -137,7 +135,6 @@ def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: li
             address=c.address or "",
             website_url=c.website_url or "",
             summary=c.summary,
-            geocoded_at=now,  # candidate places aren't city lookups; never geocode them
         )
         session.add(place)
         session.flush()  # place before the candidate that references it
@@ -169,27 +166,6 @@ def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: li
                 fetched_at=now,
             ))
     return saved
-
-
-def locate_options(session: Session, job: ResearchJob, gap: Gap, saved: list[tuple[Place, CandidateIn]], fetch: Fetcher) -> None:
-    """Best-effort map pins for options research didn't give coordinates for."""
-    trip = session.get(Trip, job.trip_id)
-    day = session.get(Day, gap.day_id) if gap.day_id else None
-    base = session.get(Place, day.base_place_id) if day and day.base_place_id else None
-    near = (base.lat, base.lng) if base and base.lat is not None and base.lng is not None else None
-    try:
-        codes = country_codes_for(session, list(trip.destinations or []), fetch) if trip else []
-        for place, c in saved:
-            if place.lat is not None:
-                continue
-            result = locate_option(session, c.name, c.address, base.name if base else None, codes, near, fetch)
-            if result:
-                place.lat, place.lng, place.precision = result.lat, result.lng, "approximate"
-                session.add(place)
-        session.commit()
-    except (httpx.HTTPError, ValueError, KeyError):
-        session.rollback()
-        log.warning("locating options for job %s failed; they'll show without pins", job.id, exc_info=True)
 
 
 def _fail(session: Session, job: ResearchJob, message: str) -> None:
@@ -230,9 +206,13 @@ def run_job(
         job.status = "failed"
         job.error = "We couldn't find good options this time. Try again."
     else:
-        saved = save_candidates(session, job, gap, result.candidates)
+        save_candidates(session, job, gap, result.candidates)
         session.commit()  # keep options even if locating them fails
-        locate_options(session, job, gap, saved, fetch or geocoding.default_fetcher())
+        geocoding.geocode_trip_places(
+            job.trip_id,
+            session_factory=lambda: Session(session.get_bind()),
+            fetch=fetch or geocoding.default_fetcher(),
+        )
         job.status = "done"
         job.error = ""
     job.finished_at = utcnow()

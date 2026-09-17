@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 
 from app.geocoding import (
     GeoResult,
+    locate_option,
     cached_lookup,
     country_codes_for,
     geocode_trip_places,
@@ -83,10 +84,21 @@ def test_edinburgh_trip_puts_paris_in_france(engine, session):
     assert not any("," in q for q, _, _ in fake.calls), "never query free-text 'City, Destination'"
 
 
-def test_settlement_outside_trip_countries_still_found(session):
+def test_settlement_outside_trip_countries_found_when_near_the_trip(session):
     fake = FakeNominatim({("Geneva", "settlement", None): [city(46.2, 6.14, "Genève", "ch")]})
-    assert locate_city(session, "Geneva", ["fr"], fake).lat == 46.2
-    assert fake.calls == [("Geneva", "settlement", "fr"), ("Geneva", "settlement", None)]
+    lyon = (45.76, 4.84)
+    assert locate_city(session, "Geneva", ["fr"], fake, nearby=[lyon]).lat == 46.2
+    assert fake.calls == [("Geneva", "settlement", "fr"), ("Geneva", None, "fr"), ("Geneva", "settlement", None)]
+
+
+def test_vague_region_never_pins_to_another_continent(session):
+    """Regression: 'Central France' matched Ville de France in Goiânia, Brazil."""
+    brazil = GeoResult(-16.74, -49.19, "Ville de France, Goiânia", category="place", country_code="br")
+    fake = FakeNominatim({("Central France", "settlement", None): [brazil]})
+    paris = (48.85, 2.35)
+    assert locate_city(session, "Central France", ["fr", "gb"], fake, nearby=[paris]) is None
+    assert locate_city(session, "Central France", [], fake, nearby=[paris]) is None
+    assert locate_city(session, "Central France", ["fr"], fake) is None
 
 
 def test_region_found_as_administrative_area_within_countries(session):
@@ -168,7 +180,53 @@ def test_country_lookup_failure_still_locates_without_limits(engine, session):
         assert s.exec(select(Place)).one().lat == 38.72
 
 
-def test_needs_lookup_ignores_non_cities_and_located_places():
-    assert not needs_lookup(Place(trip_id="t", name="Cafe", kind="coffee"))
-    assert not needs_lookup(Place(trip_id="t", name="Lisbon", kind="city", lat=1.0, lng=2.0))
+def test_needs_lookup_covers_unpinned_cities_and_options():
+    assert needs_lookup(Place(trip_id="t", name="Cafe", kind="coffee"))
     assert needs_lookup(Place(trip_id="t", name="Lisbon", kind="city"))
+    assert not needs_lookup(Place(trip_id="t", name="Lisbon", kind="city", lat=1.0, lng=2.0))
+    assert not needs_lookup(Place(trip_id="t", name="Hotel", kind="lodging", lat=1.0, lng=2.0))
+
+
+def test_cities_are_located_in_trip_order_so_later_ones_have_context(engine, session):
+    trip, places = _trip_with_cities(session, ["Paris", "Central France"], destinations=[])
+    from app.models import Day
+    from datetime import date
+    session.add_all([
+        Day(trip_id=trip.id, date=date(2027, 7, 1), base_place_id=places[0].id),
+        Day(trip_id=trip.id, date=date(2027, 7, 2), base_place_id=places[1].id),
+    ])
+    session.commit()
+    fake = FakeNominatim({
+        ("Paris", "settlement", None): [city(48.85, 2.35, "Paris", "fr")],
+        ("Central France", "settlement", None): [GeoResult(-16.74, -49.19, "Ville de France", "place", "br")],
+    })
+    geocode_trip_places(trip.id, session_factory=lambda: Session(engine), fetch=fake)
+    with Session(engine) as s:
+        pins = {p.name: p.lat for p in s.exec(select(Place))}
+    assert pins == {"Paris": 48.85, "Central France": None}
+
+
+def test_leading_place():
+    from app.geocoding import leading_place
+    assert leading_place("Clermont-Ferrand city centre (Place de Jaude area)") == "Clermont-Ferrand"
+    assert leading_place("Blois–Chambord loop on La Loire à Vélo (bike day)") == "Blois"
+    assert leading_place("Hotel do Chiado") == "Hotel do Chiado"
+
+
+def test_option_with_descriptive_name_gets_town_pin_in_trip_countries(session):
+    fake = FakeNominatim({
+        ("Clermont-Ferrand", "settlement", "fr,gb"): [city(45.78, 3.08, "Clermont-Ferrand", "fr")],
+    })
+    result = locate_option(
+        session, "Clermont-Ferrand city centre (Place de Jaude area)", None, "Central France", ["fr", "gb"], None, fake,
+    )
+    assert (result.lat, result.lng) == (45.78, 3.08)
+
+
+def test_option_map_query_is_tried_before_name(session):
+    fake = FakeNominatim({
+        ("Place de Jaude, Clermont-Ferrand", None, "fr"): [GeoResult(45.776, 3.082, "Place de Jaude", "place", "fr")],
+    })
+    result = locate_option(session, "City centre stay", None, None, ["fr"], None, fake, map_query="Place de Jaude, Clermont-Ferrand")
+    assert result.lat == 45.776
+    assert fake.calls[0] == ("Place de Jaude, Clermont-Ferrand", None, "fr")

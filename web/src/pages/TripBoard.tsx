@@ -227,6 +227,7 @@ export default function TripBoard() {
         <TripMap
           days={board.days}
           places={board.places}
+          lodgings={board.lodgings}
           chosenPlaceIds={chosenPlaceIds}
           selectedPlaceId={selectedPlaceId}
           onSelectPlace={selectPlace}

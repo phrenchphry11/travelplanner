@@ -71,6 +71,7 @@ class CandidateIn(BaseModel):
     lng: float | None
     website_url: str | None
     booking_url: str | None
+    map_query: str | None = None  # a short name OpenStreetMap can find, for the map pin
     activity_kind: Literal["meal", "sight", "tour", "outdoors", "shopping", "rest", "other"] | None
     best_time: Literal["morning", "afternoon", "evening", "any"] | None
     sources: list[SourceIn]
@@ -137,6 +138,10 @@ SUBMIT_SCHEMA = {
                     "lng": _nullable({"type": "number"}),
                     "website_url": _nullable({"type": "string"}),
                     "booking_url": _nullable({"type": "string"}),
+                    "map_query": _nullable({
+                        "type": "string",
+                        "description": "A short, searchable place name for a map, e.g. 'Place de Jaude, Clermont-Ferrand' or 'Château de Chambord'. Not a description.",
+                    }),
                     "activity_kind": _nullable({"type": "string", "enum": ["meal", "sight", "tour", "outdoors", "shopping", "rest", "other"]}),
                     "best_time": _nullable({"type": "string", "enum": ["morning", "afternoon", "evening", "any"]}),
                     "sources": {
@@ -155,7 +160,7 @@ SUBMIT_SCHEMA = {
                 },
                 "required": [
                     "name", "summary", "pros", "cons", "confidence", "price_range", "address", "neighborhood",
-                    "lat", "lng", "website_url", "booking_url", "activity_kind", "best_time", "sources",
+                    "lat", "lng", "website_url", "booking_url", "map_query", "activity_kind", "best_time", "sources",
                 ],
                 "additionalProperties": False,
             },
@@ -169,7 +174,7 @@ SYSTEM_PROMPT = """You research options for one open item in someone's trip plan
 
 Search the web and prefer official sites, reputable guides, and recent pages. Check that each place is plausibly open and operating for the travel dates. Fit the options to the day's location, the travelers' interests, and the rest of the trip.
 
-Every fact you state (price, location, hours, what it's like) should come from a page you found. List those pages as sources, using URLs exactly as they appeared in your search results. When you can't confirm a detail, use null instead of guessing. Only give coordinates when a source provides them or the place is a well-known landmark.
+Every fact you state (price, location, hours, what it's like) should come from a page you found. List those pages as sources, using URLs exactly as they appeared in your search results. When you can't confirm a detail, use null instead of guessing. Only give coordinates when a source provides them or the place is a well-known landmark. Always give a map_query that a map search could find (a venue, landmark, square, or town name), even when the option itself is an area or a route.
 
 Don't make bookings or recommend paying anyone. When you're done, call submit_candidates once with 3 to 5 options. If you truly can't find 3 good ones, submit what you have."""
 
