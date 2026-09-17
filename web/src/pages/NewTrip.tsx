@@ -33,6 +33,7 @@ export default function NewTrip() {
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [resuming, setResuming] = useState(true);
+  const [resumed, setResumed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function NewTrip() {
         setSessionId(s.id);
         setMessages(s.messages);
         setDraft(s.current_draft);
+        setResumed(true);
       })
       .catch(() => {
         // No session to resume, or it's expired; start fresh.
@@ -73,6 +75,7 @@ export default function NewTrip() {
     setDraft(null);
     setInput("");
     setError(null);
+    setResumed(false);
   }
 
   async function send(e?: FormEvent) {
@@ -144,7 +147,7 @@ export default function NewTrip() {
       <TopBar />
       <h1>Start a trip</h1>
 
-      {sessionId && messages.length > 0 && (
+      {resumed && (
         <p className="muted small">
           Picking up where you left off.{" "}
           <button type="button" className="link-button" disabled={busy} onClick={() => void startOver()}>
