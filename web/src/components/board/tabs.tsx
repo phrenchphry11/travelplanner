@@ -116,7 +116,7 @@ export function OverviewTab({ board, onOpenDay, onOpenGap }: { board: Board; onO
       <h3>Days</h3>
       <ol className="day-summary">
         {board.days.map((d) => {
-          const open = board.gaps.filter((g) => g.missing && g.day_id === d.id).length;
+          const open = board.gaps.filter((g) => g.missing && (g.kind === "lodging" ? g.covers_day_ids : [g.day_id]).includes(d.id)).length;
           const city = placeName(board, d.base_place_id);
           return (
             <li key={d.id}>
