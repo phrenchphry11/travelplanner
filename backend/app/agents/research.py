@@ -52,6 +52,7 @@ class ResearchContext:
     already_suggested: list[str] = field(default_factory=list)
     rejected: list[tuple[str, str]] = field(default_factory=list)  # (name, reason)
     today: date = field(default_factory=date.today)
+    user_cards: list[str] = field(default_factory=list)  # traveler's cards/loyalty programs, by name only (PRD 11a)
 
 
 # ---- Outputs ----------------------------------------------------------------
@@ -60,6 +61,13 @@ class SourceIn(BaseModel):
     url: str
     title: str
     note: str
+
+
+class PerkIn(BaseModel):
+    card: str  # exactly one of the traveler's held cards/programs, as given
+    note: str  # plain sentence on what the perk is, using "may apply" wording
+    source_url: str
+    source_title: str
 
 
 class CandidateIn(BaseModel):
@@ -79,6 +87,7 @@ class CandidateIn(BaseModel):
     activity_kind: Literal["meal", "sight", "tour", "outdoors", "shopping", "rest", "other"] | None
     best_time: Literal["morning", "afternoon", "evening", "any"] | None
     sources: list[SourceIn]
+    perks: list[PerkIn] = []  # card/loyalty perks that may apply, only when sourced (PRD 11a)
     unverified: bool = False  # set by us, not by the model
 
 
@@ -161,10 +170,26 @@ SUBMIT_SCHEMA = {
                             "additionalProperties": False,
                         },
                     },
+                    "perks": {
+                        "type": "array",
+                        "description": "Only when the traveler's held cards/programs were given and a real, current, sourced perk plausibly applies to this candidate. Empty array otherwise -- never guess.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "card": {"type": "string", "description": "Exactly one of the traveler's cards/programs, as given."},
+                                "note": {"type": "string", "description": "Plain sentence on the perk, using 'may apply' wording, e.g. 'May be bookable through the card's travel portal.'"},
+                                "source_url": {"type": "string", "description": "Exactly as it appeared in a search result."},
+                                "source_title": {"type": "string"},
+                            },
+                            "required": ["card", "note", "source_url", "source_title"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
                 "required": [
                     "name", "summary", "pros", "cons", "confidence", "price_range", "address", "neighborhood",
                     "lat", "lng", "website_url", "booking_url", "map_query", "activity_kind", "best_time", "sources",
+                    "perks",
                 ],
                 "additionalProperties": False,
             },
@@ -180,7 +205,9 @@ Search the web and prefer official sites, reputable guides, and recent pages. Ch
 
 Every fact you state (price, location, hours, what it's like) should come from a page you found. List those pages as sources, using URLs exactly as they appeared in your search results. When you can't confirm a detail, use null instead of guessing. Only give coordinates when a source provides them or the place is a well-known landmark. Always give a map_query that a map search could find (a venue, landmark, square, or town name), even when the option itself is an area or a route.
 
-Don't make bookings or recommend paying anyone. When you're done, call submit_candidates once with 3 to 5 options. If you truly can't find 3 good ones, submit what you have."""
+Don't make bookings or recommend paying anyone. When the traveler's held cards or loyalty programs are given, check whether a real, current, public benefit plausibly applies to a candidate (bookable through the card's travel portal, a dining-credit program, an airline transfer partner) and note it as a perk with a live source -- never guess or recall a benefit from memory, since these change often; leave a candidate's perks empty rather than invent one.
+
+When you're done, call submit_candidates once with 3 to 5 options. If you truly can't find 3 good ones, submit what you have."""
 
 
 def _format_context(ctx: ResearchContext) -> str:
@@ -193,6 +220,8 @@ def _format_context(ctx: ResearchContext) -> str:
         lines.append(f"Travelers: {ctx.travelers}")
     if ctx.interests:
         lines.append(f"Interests: {', '.join(ctx.interests)}")
+    if ctx.user_cards:
+        lines.append(f"Traveler holds these cards/loyalty programs: {', '.join(ctx.user_cards)}")
     if ctx.is_request:
         lines += ["", f"Open item ({ctx.gap_kind}), in the traveler's words: {ctx.gap_prompt}"]
     else:
@@ -251,14 +280,19 @@ def collect_result_urls(content: list[Any]) -> set[str]:
 
 
 def verify_sources(candidates: list[CandidateIn], seen_urls: set[str]) -> list[CandidateIn]:
-    """Drop sources Claude didn't actually see. Unsourced options become low-confidence and unverified."""
+    """Drop sources (and perks) Claude didn't actually see. Unsourced options become low-confidence
+    and unverified; an unsourced perk is dropped entirely rather than shown unverified, since an
+    unconfirmed benefit claim is worse than none (PRD 11a: never promise a credit will work)."""
     checked = []
     for c in candidates:
         kept = [s for s in c.sources if normalize_url(s.url) in seen_urls]
         dropped = len(c.sources) - len(kept)
         if dropped:
             log.info("dropped %d unseen source(s) for %r", dropped, c.name)
-        update: dict[str, Any] = {"sources": kept}
+        kept_perks = [p for p in c.perks if normalize_url(p.source_url) in seen_urls]
+        if len(kept_perks) != len(c.perks):
+            log.info("dropped %d unsourced perk(s) for %r", len(c.perks) - len(kept_perks), c.name)
+        update: dict[str, Any] = {"sources": kept, "perks": kept_perks}
         if not kept:
             update.update(unverified=True, confidence="low")
         checked.append(c.model_copy(update=update))

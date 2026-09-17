@@ -60,6 +60,19 @@ export default function CandidateCard({ candidate: c, hasPin, highlighted, onHov
           ))}
         </ul>
       )}
+      {c.perks.length > 0 && (
+        <ul className="perk-list">
+          {c.perks.map((p, i) => (
+            <li key={i} className="perk-badge">
+              💳{" "}
+              <a href={p.source_url} target="_blank" rel="noreferrer" title={p.source_title}>
+                {p.note}
+              </a>{" "}
+              via {p.card} — may apply, checked {p.checked_date}
+            </li>
+          ))}
+        </ul>
+      )}
       <footer className="small">
         {c.website_url && (
           <a href={c.website_url} target="_blank" rel="noreferrer">Website</a>

@@ -53,6 +53,14 @@ class BoardSource(BaseModel):
     note: str
 
 
+class BoardPerk(BaseModel):
+    card: str
+    note: str
+    source_url: str
+    source_title: str
+    checked_date: str
+
+
 class BoardCandidate(BaseModel):
     id: str
     name: str
@@ -70,6 +78,7 @@ class BoardCandidate(BaseModel):
     best_time: str | None
     place_id: str | None
     sources: list[BoardSource]
+    perks: list[BoardPerk]
 
 
 class BoardGap(BaseModel):
@@ -275,6 +284,7 @@ def _candidate_out(c: Candidate, sources: list[Source]) -> BoardCandidate:
         best_time=p.get("best_time"),
         place_id=c.place_id,
         sources=[BoardSource(title=s.title, url=s.url, note=s.note) for s in sources],
+        perks=[BoardPerk(**perk) for perk in p.get("perks", [])],
     )
 
 

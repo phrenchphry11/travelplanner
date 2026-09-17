@@ -21,7 +21,7 @@ from app.db import engine
 from app import geocoding
 from app.geocoding import Fetcher
 from app.trash import expire_unconfirmed_intake_sessions, purge_deleted_trips
-from app.models import Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Trip, utcnow
+from app.models import Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Trip, UserCard, utcnow
 from app.planning import ordered_day_plans
 
 log = logging.getLogger("worker")
@@ -112,6 +112,9 @@ def build_context(session: Session, job: ResearchJob) -> ResearchContext:
         stay = _stay_description(session, trip.id, day)
 
     previous = list(session.exec(select(Candidate).where(Candidate.gap_id == gap.id)))
+    user_cards: list[str] = []
+    if gap.kind in ("lodging", "activity"):
+        user_cards = [c.name for c in session.exec(select(UserCard).where(UserCard.user_id == trip.owner_id))]
     return ResearchContext(
         trip_title=trip.title,
         destinations=list(trip.destinations or []),
@@ -131,6 +134,7 @@ def build_context(session: Session, job: ResearchJob) -> ResearchContext:
         stay=stay,
         already_suggested=[c.payload.get("name", "") for c in previous if c.status != "rejected" and c.payload.get("name")],
         rejected=[(c.payload.get("name", ""), c.rejection_reason) for c in previous if c.status == "rejected"],
+        user_cards=user_cards,
     )
 
 
@@ -175,11 +179,16 @@ def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: li
         session.flush()  # place before the candidate that references it
         saved.append((place, c))
 
+        payload = c.model_dump(exclude={"sources", "pros", "cons", "summary", "confidence"})
+        if payload.get("perks"):
+            checked_date = now.date().isoformat()
+            payload["perks"] = [{**perk, "checked_date": checked_date} for perk in payload["perks"]]
+
         candidate = Candidate(
             trip_id=job.trip_id,
             gap_id=gap.id,
             target_kind=gap.kind if gap.kind in ("lodging", "transit", "activity") else "place",
-            payload=c.model_dump(exclude={"sources", "pros", "cons", "summary", "confidence"}),
+            payload=payload,
             place_id=place.id,
             summary=c.summary,
             pros=c.pros,

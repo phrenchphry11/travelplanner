@@ -158,6 +158,10 @@ button.icon { padding: 6px 10px; background: transparent; color: var(--ink); bor
 .pros-cons li::before { display: inline-block; width: 1.1em; font-weight: 700; }
 .pros-cons .pro::before { content: "+"; color: #2f6f43; }
 .pros-cons .con::before { content: "−"; color: var(--warn); }
+
+.perk-list { list-style: none; padding: 0; margin: 0 0 6px; display: grid; gap: 4px; }
+.perk-badge { display: inline-block; background: #f0ede3; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 0.8rem; }
+.perk-badge a { color: inherit; }
 .candidate-card footer { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
 
 /* Compare drawer */

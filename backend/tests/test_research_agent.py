@@ -170,3 +170,36 @@ def test_verify_sources_keeps_matching_urls_only():
     [out] = verify_sources([c], {"https://a.example/x"})
     assert [s.url for s in out.sources] == ["https://a.example/x/"]
     assert out.confidence == "high" and not out.unverified
+
+
+def test_prompt_includes_held_cards():
+    text = _format_context(ctx(user_cards=["Chase Sapphire Reserve", "Marriott Bonvoy"]))
+    assert "Chase Sapphire Reserve, Marriott Bonvoy" in text
+
+
+def test_prompt_omits_cards_line_when_none_held():
+    assert "loyalty program" not in _format_context(ctx())
+
+
+def test_verify_sources_drops_unsourced_perks_but_keeps_sourced_ones():
+    c = CandidateIn.model_validate(cand(perks=[
+        {"card": "Amex Platinum", "note": "May get a dining credit.", "source_url": "https://real.example/perk", "source_title": "t"},
+        {"card": "Chase Sapphire Reserve", "note": "Made up.", "source_url": "https://made-up.example/perk", "source_title": "t"},
+    ]))
+    [out] = verify_sources([c], {"https://real.example/perk"})
+    assert [p.card for p in out.perks] == ["Amex Platinum"]
+
+
+def test_happy_path_carries_perks_through():
+    client = FakeClient([
+        response("tool_use", [
+            search_result("https://www.hotel-a.example", "https://portal.example/deal"),
+            submit([cand(perks=[
+                {"card": "Amex Platinum", "note": "May be bookable through the travel portal.",
+                 "source_url": "https://portal.example/deal", "source_title": "Portal"},
+            ])]),
+        ]),
+    ])
+    [c] = research_gap(ctx(), client=client).candidates
+    assert c.perks[0].card == "Amex Platinum"
+    assert c.perks[0].source_url == "https://portal.example/deal"

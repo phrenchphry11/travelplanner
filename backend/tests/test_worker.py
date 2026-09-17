@@ -95,6 +95,47 @@ def test_success_saves_candidates_places_sources_and_usage(make_client, engine):
     assert gap["job"]["status"] == "done"
 
 
+def test_owner_cards_flow_into_lodging_and_activity_context_only(make_client, engine):
+    client = make_client()
+    client.put("/me/cards", json={"cards": ["Chase Sapphire Reserve"]})
+    trip_id = _confirm(client)
+
+    _queue(client, trip_id, kind="lodging")
+    _, lodging_ctx = _run(engine, lambda ctx: ResearchResult([_candidate("Hotel A")], ResearchUsage()))
+    assert lodging_ctx.user_cards == ["Chase Sapphire Reserve"]
+
+    _queue(client, trip_id, kind="activity")
+    _, activity_ctx = _run(engine, lambda ctx: ResearchResult([_candidate("Castle")], ResearchUsage()))
+    assert activity_ctx.user_cards == ["Chase Sapphire Reserve"]
+
+
+def test_perks_are_stamped_with_a_checked_date_and_reach_the_board(make_client, engine):
+    client = make_client()
+    client.put("/me/cards", json={"cards": ["Amex Platinum"]})
+    trip_id = _confirm(client)
+    gap_id = _queue(client, trip_id, kind="lodging")
+
+    result = ResearchResult(
+        candidates=[_candidate("Hotel A", perks=[
+            {"card": "Amex Platinum", "note": "May be bookable through the travel portal.",
+             "source_url": "https://portal.example/deal", "source_title": "Portal"},
+        ])],
+        usage=ResearchUsage(),
+    )
+    _run(engine, lambda ctx: result)
+
+    with Session(engine) as s:
+        [c] = s.exec(select(Candidate).where(Candidate.gap_id == gap_id)).all()
+        [perk] = c.payload["perks"]
+        assert perk["card"] == "Amex Platinum"
+        assert perk["checked_date"] == utcnow().date().isoformat()
+
+    board = client.get(f"/trips/{trip_id}/board").json()
+    gap = next(g for g in board["gaps"] if g["id"] == gap_id)
+    [perk] = gap["candidates"][0]["perks"]
+    assert perk["source_url"] == "https://portal.example/deal"
+
+
 def test_activity_place_kinds(make_client, engine):
     client = make_client()
     trip_id = _confirm(client)

@@ -177,6 +177,7 @@ export type NewSavedPlace = { name: string; kind: SavedPlaceKind; address: strin
 export type SavedPlaceChanges = Partial<NewSavedPlace>;
 export type BoardJob = { id: string; status: "queued" | "running" | "done" | "failed"; error: string };
 export type BoardSource = { title: string; url: string; note: string };
+export type BoardPerk = { card: string; note: string; source_url: string; source_title: string; checked_date: string };
 export type BoardCandidate = {
   id: string;
   name: string;
@@ -194,6 +195,7 @@ export type BoardCandidate = {
   best_time: string | null;
   place_id: string | null;
   sources: BoardSource[];
+  perks: BoardPerk[];
 };
 
 export type BoardGap = {
