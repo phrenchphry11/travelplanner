@@ -4,6 +4,8 @@ import { TIME_OF_DAY_OPTIONS, type NewPlan, type TimeOfDay } from "../../lib/api
 type Props = {
   city: string;
   busy: boolean;
+  /** Prefilled "Find ideas" request, e.g. on an empty day. Editable before sending. */
+  suggestedRequest?: string;
   /** Starts research, which costs money: only ever called from the "Find ideas" button. */
   onFindIdeas: (request: string, timeOfDay: TimeOfDay) => Promise<void>;
   onAdd: (plan: NewPlan) => Promise<void>;
@@ -25,7 +27,7 @@ export function TimeOfDaySelect({ value, onChange, disabled }: { value: TimeOfDa
   );
 }
 
-export default function AddPlan({ city, busy, onFindIdeas, onAdd }: Props) {
+export default function AddPlan({ city, busy, suggestedRequest = "", onFindIdeas, onAdd }: Props) {
   const [mode, setMode] = useState<Mode>("closed");
   const [request, setRequest] = useState("");
   const [requestTime, setRequestTime] = useState<TimeOfDay>("");
@@ -33,6 +35,7 @@ export default function AddPlan({ city, busy, onFindIdeas, onAdd }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   function switchTo(next: Mode) {
+    if (next === "ideas" && !request) setRequest(suggestedRequest);
     setMode(next);
     setError(null);
   }

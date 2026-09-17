@@ -152,6 +152,13 @@ Implemented 2026-09-16 (plans for the day):
   hides it unless it has options or a search running. Open lodging gaps and
   open requests always count.
 
+Single entry point for day plans (2026-09-16): *Add a plan* is the only way
+to add plans to a day, via *Find ideas* (research on the traveler's request)
+or *Add it yourself*. The starter "What to do in..." item no longer offers its
+own *Find options*; it only marks an empty day as missing, and on an empty day
+*Find ideas* opens prefilled with "Things to do in <city>". Clicking a missing
+starter item in Overview opens that day. Stays still use *Find options*.
+
 ### 5.5 Gap detail and candidate comparison (the inbox)
 Opens as a drawer over the board so the map stays visible. Header restates
 the gap in plain words. Body is a horizontal row of candidate cards (see

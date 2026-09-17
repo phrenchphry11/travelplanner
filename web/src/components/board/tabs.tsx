@@ -66,13 +66,15 @@ export function OverviewTab({ board, onOpenDay, onOpenGap }: { board: Board; onO
           {missing.map((g) => {
             const day = g.day_id ? dayById.get(g.day_id) : undefined;
             const count = g.candidates.length;
+            // An empty day's plans are added from the Day tab's "Add a plan", not the options drawer.
+            const opensDay = !!day && g.kind === "activity" && g.origin === "starter" && count === 0 && !isJobActive(g.job);
             return (
               <li key={g.id}>
-                <button type="button" className="row-button" onClick={() => onOpenGap(g)}>
+                <button type="button" className="row-button" onClick={() => (opensDay ? onOpenDay(day) : onOpenGap(g))}>
                   <span className="day-date">{day ? shortDate(day.date) : "Whole trip"}</span>
                   <span>{g.prompt}</span>
                   <span className={count ? "gaps has-gaps" : "muted small"}>
-                    {count ? `${count} to compare` : g.kind === "lodging" ? "Stay" : "Plans"}
+                    {count ? `${count} to compare` : g.kind === "lodging" ? "Stay" : "Add plans"}
                   </span>
                 </button>
               </li>
@@ -108,14 +110,15 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
   const isLastDay = board.days[board.days.length - 1]?.id === day.id;
   // Already in order: morning, afternoon, evening, any time.
   const activities = board.activities.filter((a) => a.day_id === day.id);
-  // The starter "What to do in..." prompt is for an empty day. Once there are plans, only show it
-  // if it has options or a search going. Requests the traveler made always show until resolved.
+  // "Add a plan" is the single way to add plans. The starter "What to do in..." item only
+  // marks an empty day as missing; it's shown here just when it already has options or a
+  // search going from before. Requests the traveler made always show until resolved.
   const activityGaps = board.gaps.filter(
     (g) =>
       g.kind === "activity" &&
       g.day_id === day.id &&
       isGapOpen(g) &&
-      (g.origin === "request" || activities.length === 0 || g.candidates.length > 0 || isJobActive(g.job) || props.startingGapIds.has(g.id)),
+      (g.origin === "request" || g.candidates.length > 0 || isJobActive(g.job) || props.startingGapIds.has(g.id)),
   );
   const stay = lodgingForNight(board, day.date);
   const lodgingGap = board.gaps.find((g) => g.kind === "lodging" && isGapOpen(g) && g.covers_day_ids.includes(day.id));
@@ -154,11 +157,12 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
         {activityGaps.map((g) => (
           <GapSlot key={g.id} gap={g} onOpen={props.onOpenGap} starting={props.startingGapIds.has(g.id)} />
         ))}
-        {activities.length === 0 && activityGaps.length === 0 && <p className="muted">Nothing planned.</p>}
+        {activities.length === 0 && activityGaps.length === 0 && <p className="muted">Nothing planned yet.</p>}
         <AddPlan
           key={day.id}
           city={city}
           busy={props.busy}
+          suggestedRequest={activities.length === 0 ? (city ? `Things to do in ${city}` : "Things to do") : ""}
           onFindIdeas={(request, time) => props.onFindIdeas(day, request, time)}
           onAdd={(plan) => props.onAddPlan(day, plan)}
         />
