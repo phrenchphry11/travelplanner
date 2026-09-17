@@ -16,3 +16,6 @@ dist/
 # which backend/.gitignore's ".venv/" does not match.
 .agent-slot
 backend/.venv
+
+# Claude Code agent worktrees
+.claude/worktrees/
