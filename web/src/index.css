@@ -199,6 +199,8 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
 
 /* Share dialog */
 .board-actions { display: flex; gap: 8px; align-items: center; }
+
+.nudge-banner { background: #f0ede3; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 0.9rem; }
 .share-on { font-weight: 400; opacity: 0.85; }
 .share-dialog { width: min(480px, calc(100vw - 32px)); }
 .share-dialog .confirm-dialog-text { margin: 0; line-height: 1.5; }

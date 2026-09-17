@@ -65,3 +65,15 @@ def set_cards(
         session.add(UserCard(user_id=user.id, name=name))
     session.commit()
     return _cards_out(session, user)
+
+
+@router.post("/me/cards/dismiss-nudge", status_code=204)
+def dismiss_cards_nudge(
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> None:
+    """The board's 'add your cards' banner, dismissed for good."""
+    if not user.cards_banner_dismissed:
+        user.cards_banner_dismissed = True
+        session.add(user)
+        session.commit()

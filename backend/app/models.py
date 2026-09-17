@@ -35,6 +35,7 @@ class User(SQLModel, table=True):
     id: str = Field(primary_key=True)  # Clerk user id
     email: str = Field(index=True)
     display_name: str = ""
+    cards_banner_dismissed: bool = False  # the board's "add your cards" nudge, dismissed for good
     created_at: datetime = Field(default_factory=utcnow)
 
 

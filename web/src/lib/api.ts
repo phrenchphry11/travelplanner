@@ -305,6 +305,7 @@ export type Board = {
   lodgings: BoardLodging[];
   activities: BoardActivity[];
   transit: BoardTransit[];
+  show_cards_nudge: boolean;
 };
 
 export function isGapOpen(gap: BoardGap): boolean {

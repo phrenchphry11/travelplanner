@@ -1,3 +1,5 @@
+from sqlmodel import select
+
 from app.geocoding import get_trip_locator
 from app.main import app
 from app.models import Gap
@@ -52,6 +54,35 @@ def test_board_shape_and_lodging_coverage(make_client):
 def test_board_is_private(make_client):
     trip_id = _confirm(make_client("owner"))
     assert make_client("stranger").get(f"/trips/{trip_id}/board").status_code == 404
+
+
+def test_cards_nudge_shows_with_no_cards_and_hides_once_added(make_client):
+    client = make_client()
+    trip_id = _confirm(client)
+    assert client.get(f"/trips/{trip_id}/board").json()["show_cards_nudge"] is True
+
+    client.put("/me/cards", json={"cards": ["Chase Sapphire Reserve"]})
+    assert client.get(f"/trips/{trip_id}/board").json()["show_cards_nudge"] is False
+
+
+def test_cards_nudge_sticks_dismissed(make_client):
+    client = make_client()
+    trip_id = _confirm(client)
+    assert client.post("/me/cards/dismiss-nudge").status_code == 204
+    assert client.get(f"/trips/{trip_id}/board").json()["show_cards_nudge"] is False
+
+    # Idempotent: dismissing again doesn't error.
+    assert client.post("/me/cards/dismiss-nudge").status_code == 204
+
+
+def test_cards_nudge_hidden_with_no_open_lodging_or_activity_gaps(make_client, session):
+    client = make_client()
+    trip_id = _confirm(client)
+    for gap in session.exec(select(Gap).where(Gap.trip_id == trip_id)):
+        gap.status = "answered"
+        session.add(gap)
+    session.commit()
+    assert client.get(f"/trips/{trip_id}/board").json()["show_cards_nudge"] is False
 
 
 def test_start_research_is_idempotent_and_visible_on_board(make_client):

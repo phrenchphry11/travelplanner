@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import CardsDialog from "../components/CardsDialog";
 import CompareDrawer from "../components/board/CompareDrawer";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CollaboratorsDialog from "../components/CollaboratorsDialog";
@@ -7,6 +8,7 @@ import ShareDialog from "../components/ShareDialog";
 import { ActivitiesTab, DayTab, LodgingTab, OverviewTab, SavedPlacesTab } from "../components/board/tabs";
 import TripMap, { type MapOption } from "../components/board/TripMap";
 import TopBar from "../components/TopBar";
+import { useCardsDialog } from "../lib/useCardsDialog";
 import {
   ApiError,
   formatDateRange,
@@ -69,6 +71,8 @@ export default function TripBoard() {
   const [pendingRemovePlace, setPendingRemovePlace] = useState<BoardPlace | null>(null);
   const [pendingDeleteTrip, setPendingDeleteTrip] = useState(false);
   const [pendingRemoveTransit, setPendingRemoveTransit] = useState<BoardTransit | null>(null);
+  const [nudgeDismissed, setNudgeDismissed] = useState(false);
+  const cardsDialog = useCardsDialog();
   const polls = useRef(0);
 
   const load = useCallback(async () => {
@@ -299,6 +303,18 @@ export default function TripBoard() {
     void loadCollaborators();
   }
 
+  function dismissCardsNudge() {
+    setNudgeDismissed(true);
+    void api("/me/cards/dismiss-nudge", { method: "POST" }).catch(() => {
+      // Best effort; worst case it reappears next visit.
+    });
+  }
+
+  async function saveNudgeCards(cards: string[]) {
+    await cardsDialog.save(cards);
+    if (cards.length > 0) setNudgeDismissed(true);
+  }
+
   async function inviteCollaborator(email: string) {
     if (!board) return;
     setCollabBusy(true);
@@ -439,6 +455,20 @@ export default function TripBoard() {
       </div>
       {error && <p className="error">{error}</p>}
 
+      {board.show_cards_nudge && !nudgeDismissed && (
+        <p className="nudge-banner">
+          Add any travel cards or loyalty programs to get perk suggestions when we research places to stay and
+          things to do.{" "}
+          <button type="button" className="link-button" onClick={cardsDialog.openDialog}>
+            Add cards
+          </button>{" "}
+          ·{" "}
+          <button type="button" className="link-button" onClick={dismissCardsNudge}>
+            Dismiss
+          </button>
+        </p>
+      )}
+
       <div className="board">
         <TripMap
           days={board.days}
@@ -521,6 +551,16 @@ export default function TripBoard() {
           )}
         </section>
       </div>
+
+      <CardsDialog
+        open={cardsDialog.open}
+        catalog={cardsDialog.catalog}
+        cards={cardsDialog.cards}
+        busy={cardsDialog.busy}
+        error={cardsDialog.error}
+        onSave={saveNudgeCards}
+        onClose={cardsDialog.close}
+      />
 
       <CollaboratorsDialog
         open={collabOpen}

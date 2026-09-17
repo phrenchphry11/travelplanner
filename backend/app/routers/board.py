@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator, needs_lookup
-from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Transit, Trip, TripMember, User
+from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Transit, Trip, TripMember, User, UserCard
 from app.planning import OPEN_GAP_STATUSES, counts_as_missing, lodging_coverage, plan_order_key
 from app.routers.trips import TripOut, get_member_trip, to_trip_out
 
@@ -141,6 +141,7 @@ class Board(BaseModel):
     lodgings: list[BoardLodging]
     activities: list[BoardActivity]
     transit: list[BoardTransit]
+    show_cards_nudge: bool = False  # invite the traveler to add cards/loyalty programs (PRD 11a)
 
 
 @router.get("/trips/{trip_id}/board", response_model=Board)
@@ -192,6 +193,12 @@ def get_board(
         background.add_task(locate, trip.id)
 
     missing = {g.id for g in gaps if counts_as_missing(g, days_with_plans)}
+    has_cards = session.exec(select(UserCard).where(UserCard.user_id == user.id)).first() is not None
+    show_cards_nudge = (
+        not user.cards_banner_dismissed
+        and not has_cards
+        and any(g.kind in ("lodging", "activity") and g.status in OPEN_GAP_STATUSES for g in gaps)
+    )
     return Board(
         trip=to_trip_out(trip, user.id, open_gap_count=len(missing)),
         days=[BoardDay(id=d.id, date=d.date, title=d.title, summary=d.summary, base_place_id=d.base_place_id) for d in days],
@@ -245,6 +252,7 @@ def get_board(
             )
             for t in transit
         ],
+        show_cards_nudge=show_cards_nudge,
     )
 
 
