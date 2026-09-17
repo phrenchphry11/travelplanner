@@ -79,6 +79,19 @@ class TripInvite(SQLModel, table=True):
     accepted_at: datetime | None = None
 
 
+class UserCard(SQLModel, table=True):
+    """A credit card or loyalty program a traveler holds, by name only (PRD 11a).
+
+    No account access or numbers; just enough for the research agent to check
+    current public benefits against. Reused across every trip the user plans.
+    """
+    __tablename__ = "user_cards"
+    id: str = Field(default_factory=new_id, primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    name: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class IntakeSession(SQLModel, table=True):
     """The intake chat for a trip that hasn't been confirmed yet (or was, and is kept for reference).
 
