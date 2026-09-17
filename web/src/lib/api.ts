@@ -232,6 +232,41 @@ export type BoardActivity = {
   notes: string;
 };
 
+export type TransitMethod = "train" | "flight" | "drive" | "bus" | "ferry" | "walk" | "taxi" | "other";
+export const TRANSIT_METHODS: { value: TransitMethod; label: string }[] = [
+  { value: "train", label: "Train" },
+  { value: "flight", label: "Flight" },
+  { value: "drive", label: "Drive" },
+  { value: "bus", label: "Bus" },
+  { value: "ferry", label: "Ferry" },
+  { value: "walk", label: "Walk" },
+  { value: "taxi", label: "Taxi" },
+  { value: "other", label: "Other" },
+];
+
+export type BoardTransit = {
+  id: string;
+  day_id: string;
+  name: string;
+  method: TransitMethod;
+  depart_time: string; // "HH:MM" or ""
+  arrive_time: string;
+  booking_url: string;
+  confirmation_code: string;
+  notes: string;
+};
+
+export type NewTransit = {
+  name: string;
+  method: TransitMethod;
+  depart_time: string;
+  arrive_time: string;
+  link: string;
+  confirmation_code: string;
+  notes: string;
+};
+export type TransitChanges = Partial<NewTransit>;
+
 export type TimeOfDay = "" | "morning" | "afternoon" | "evening";
 export const TIME_OF_DAY_OPTIONS: { value: TimeOfDay; label: string }[] = [
   { value: "", label: "Any time" },
@@ -253,6 +288,7 @@ export type Board = {
   gaps: BoardGap[];
   lodgings: BoardLodging[];
   activities: BoardActivity[];
+  transit: BoardTransit[];
 };
 
 export function isGapOpen(gap: BoardGap): boolean {

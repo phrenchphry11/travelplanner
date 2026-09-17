@@ -19,11 +19,14 @@ import {
   type BoardDay,
   type BoardGap,
   type BoardPlace,
+  type BoardTransit,
   type NewLodging,
+  type NewTransit,
   type NewSavedPlace,
   type NewPlan,
   type PlanChanges,
   type SavedPlaceChanges,
+  type TransitChanges,
   type TimeOfDay,
 } from "../lib/api";
 
@@ -58,6 +61,7 @@ export default function TripBoard() {
   const [pendingDismiss, setPendingDismiss] = useState<BoardGap | null>(null);
   const [pendingRemovePlace, setPendingRemovePlace] = useState<BoardPlace | null>(null);
   const [pendingDeleteTrip, setPendingDeleteTrip] = useState(false);
+  const [pendingRemoveTransit, setPendingRemoveTransit] = useState<BoardTransit | null>(null);
   const polls = useRef(0);
 
   const load = useCallback(async () => {
@@ -169,6 +173,21 @@ export default function TripBoard() {
 
   function movePlan(activity: BoardActivity, direction: "up" | "down") {
     void act(() => api(`/activities/${activity.id}/move`, { method: "POST", body: JSON.stringify({ direction }) }));
+  }
+
+  async function addTransit(day: BoardDay, leg: NewTransit) {
+    await submit(() => api(`/days/${day.id}/transit`, { method: "POST", body: JSON.stringify(leg) }));
+  }
+
+  async function editTransit(leg: BoardTransit, changes: TransitChanges) {
+    await submit(() => api(`/transit/${leg.id}`, { method: "PATCH", body: JSON.stringify(changes) }));
+  }
+
+  async function confirmRemoveTransit() {
+    if (!pendingRemoveTransit) return;
+    const leg = pendingRemoveTransit;
+    await act(() => api(`/transit/${leg.id}`, { method: "DELETE" }));
+    setPendingRemoveTransit(null);
   }
 
   async function confirmRemove() {
@@ -312,6 +331,9 @@ export default function TripBoard() {
     onEditPlan: editPlan,
     onMovePlan: movePlan,
     onRemovePlan: setPendingRemove,
+    onAddTransit: addTransit,
+    onEditTransit: editTransit,
+    onRemoveTransit: setPendingRemoveTransit,
   };
   const removingChosen = pendingRemove ? board.gaps.some((g) => g.resolved_by_id === pendingRemove.id) : false;
   const removingDay = pendingRemove ? board.days.find((d) => d.id === pendingRemove.day_id) : undefined;
@@ -502,6 +524,22 @@ export default function TripBoard() {
         {pendingRemovePlace && (
           <p>
             <strong>{pendingRemovePlace.name}</strong> will be removed from your saved places. This can't be undone.
+          </p>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingRemoveTransit !== null}
+        title="Remove this travel leg?"
+        confirmLabel="Remove it"
+        tone="danger"
+        busy={busy}
+        onConfirm={confirmRemoveTransit}
+        onCancel={() => setPendingRemoveTransit(null)}
+      >
+        {pendingRemoveTransit && (
+          <p>
+            <strong>{pendingRemoveTransit.name}</strong> will be removed. This can't be undone.
           </p>
         )}
       </ConfirmDialog>

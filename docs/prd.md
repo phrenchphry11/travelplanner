@@ -247,6 +247,19 @@ Implemented (2026-09-16):
   list opening today's day while traveling, links to booking, website and
   Google Maps. Sets `robots: noindex` and `referrer: no-referrer` meta tags.
 
+### Manual transit (2026-09-17)
+
+Transit is manual-only in v1 (PRD scope table): a "Getting there" section
+on the Day tab, above "Plans for the day", lets the traveler add, edit,
+and remove a travel leg by hand (name, method, optional depart/arrive
+times, link, confirmation number, notes). No research agent, no map
+pins or place links for v1; `name` carries the whole description
+("Lisbon to Porto"), matching the documented data model.
+
+While building this, applied `trip_is_deleted` consistently to every
+sub-resource membership check (a day, activity, gap, or candidate) so a
+soft-deleted trip is fully inert everywhere, not just at the board.
+
 ### Trash (2026-09-17)
 
 Deleting a trip sets `deleted_at` instead of removing it. Deleted trips

@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator, needs_lookup
-from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Trip, TripMember, User
+from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Transit, Trip, TripMember, User
 from app.planning import OPEN_GAP_STATUSES, counts_as_missing, lodging_coverage, plan_order_key
 from app.routers.trips import TripOut, get_member_trip, to_trip_out
 
@@ -121,6 +121,18 @@ class BoardActivity(BaseModel):
     notes: str
 
 
+class BoardTransit(BaseModel):
+    id: str
+    day_id: str
+    name: str
+    method: str
+    depart_time: str  # "HH:MM" or ""
+    arrive_time: str
+    booking_url: str
+    confirmation_code: str
+    notes: str
+
+
 class Board(BaseModel):
     trip: TripOut
     days: list[BoardDay]
@@ -128,6 +140,7 @@ class Board(BaseModel):
     gaps: list[BoardGap]
     lodgings: list[BoardLodging]
     activities: list[BoardActivity]
+    transit: list[BoardTransit]
 
 
 @router.get("/trips/{trip_id}/board", response_model=Board)
@@ -143,6 +156,10 @@ def get_board(
     places = list(session.exec(select(Place).where(Place.trip_id == trip.id)))
     gaps = list(session.exec(select(Gap).where(Gap.trip_id == trip.id).order_by(Gap.created_at)))
     lodgings = list(session.exec(select(Lodging).where(Lodging.trip_id == trip.id).order_by(Lodging.check_in)))
+    transit = sorted(
+        session.exec(select(Transit).where(Transit.trip_id == trip.id)),
+        key=lambda t: (t.day_id, t.depart_at or datetime.max, t.name),
+    )
     # Each day's plans in the order they happen: morning, afternoon, evening, anytime.
     activities = sorted(
         session.exec(select(Activity).where(Activity.trip_id == trip.id)),
@@ -218,6 +235,15 @@ def get_board(
             BoardActivity(id=a.id, day_id=a.day_id, name=a.name, kind=a.kind, place_id=a.place_id,
                           start_time=a.start_time, time_of_day=a.time_of_day, sort_order=a.sort_order, status=a.status, booking_url=a.booking_url, notes=a.notes)
             for a in activities
+        ],
+        transit=[
+            BoardTransit(
+                id=t.id, day_id=t.day_id, name=t.name, method=t.method,
+                depart_time=t.depart_at.strftime("%H:%M") if t.depart_at else "",
+                arrive_time=t.arrive_at.strftime("%H:%M") if t.arrive_at else "",
+                booking_url=t.booking_url, confirmation_code=t.confirmation_code, notes=t.notes,
+            )
+            for t in transit
         ],
     )
 

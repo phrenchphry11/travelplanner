@@ -4,20 +4,25 @@ import type {
   BoardDay,
   BoardGap,
   BoardLodging,
+  BoardTransit,
   NewLodging,
   NewPlan,
   NewSavedPlace,
+  NewTransit,
   SavedPlaceChanges,
   SavedPlaceKind,
   TimeOfDay,
   PlanChanges,
+  TransitChanges,
 } from "../../lib/api";
 import { gapResolvedBy, isGapOpen, isJobActive, lodgingForNight, SAVED_PLACE_KINDS, shortDate } from "../../lib/api";
 import AddPlan from "./AddPlan";
+import AddTransit from "./AddTransit";
 import AddSavedPlace from "./AddSavedPlace";
 import DayPlan from "./DayPlan";
 import GapSlot from "./GapSlot";
 import PlanItem from "./PlanItem";
+import TransitItem from "./TransitItem";
 import SavedPlaceItem from "./SavedPlaceItem";
 
 type GapProps = {
@@ -66,6 +71,9 @@ export type PlanProps = {
   onEditPlan: (activity: BoardActivity, changes: PlanChanges) => Promise<void>;
   onMovePlan: (activity: BoardActivity, direction: "up" | "down") => void;
   onRemovePlan: (activity: BoardActivity) => void;
+  onAddTransit: (day: BoardDay, leg: NewTransit) => Promise<void>;
+  onEditTransit: (leg: BoardTransit, changes: TransitChanges) => Promise<void>;
+  onRemoveTransit: (leg: BoardTransit) => void;
 };
 
 export function OverviewTab({ board, onOpenDay, onOpenGap }: { board: Board; onOpenDay: (day: BoardDay) => void; onOpenGap: (gap: BoardGap) => void }) {
@@ -142,6 +150,7 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
   const stay = lodgingForNight(board, day.date);
   const lodgingGap = board.gaps.find((g) => g.kind === "lodging" && isGapOpen(g) && g.covers_day_ids.includes(day.id));
   const city = placeName(board, day.base_place_id);
+  const transit = board.transit.filter((t) => t.day_id === day.id);
 
   return (
     <div className="tab-body">
@@ -150,6 +159,20 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
         <h3>{day.title}</h3>
         {day.summary && <p>{day.summary}</p>}
       </header>
+
+      <section className="slot-group">
+        <h4>Getting there</h4>
+        {transit.map((leg) => (
+          <TransitItem
+            key={leg.id}
+            leg={leg}
+            busy={props.busy}
+            onEdit={(changes) => props.onEditTransit(leg, changes)}
+            onRemove={() => props.onRemoveTransit(leg)}
+          />
+        ))}
+        <AddTransit busy={props.busy} onAdd={(leg) => props.onAddTransit(day, leg)} />
+      </section>
 
       <section className="slot-group">
         <h4>Plans for the day</h4>

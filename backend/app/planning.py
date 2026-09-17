@@ -5,9 +5,18 @@ from urllib.parse import urlsplit
 
 from sqlmodel import Session, select
 
-from app.models import Activity, Day, Gap
+from app.models import Activity, Day, Gap, Trip
 
 OPEN_GAP_STATUSES = ("open", "researching")
+
+
+def trip_is_deleted(session: Session, trip_id: str) -> bool:
+    """True if the trip is missing or in the trash. Sub-resource endpoints (a day, an
+    activity, a gap, a saved place, ...) check this alongside their own membership check,
+    since a trip's membership row outlives the trip being soft-deleted."""
+    trip = session.get(Trip, trip_id)
+    return trip is None or trip.deleted_at is not None
+
 TIMES_OF_DAY = ("morning", "afternoon", "evening")
 
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:(?!\d)")  # "mailto:" but not "example.com:8080"

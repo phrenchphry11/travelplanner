@@ -153,3 +153,13 @@ def test_cannot_manage_sharing_on_a_deleted_trip(make_client):
     trip_id = _confirm(client, cities=CITIES)
     client.delete(f"/trips/{trip_id}")
     assert client.post(f"/trips/{trip_id}/share").status_code == 404
+
+
+def test_cannot_reopen_a_gap_on_a_deleted_trip(make_client):
+    client = make_client()
+    trip_id = _confirm(client, cities=CITIES)
+    gap = _lodging_gap(client, trip_id)
+    client.post(f"/gaps/{gap['id']}/lodging", json={"name": "My Aunt's Flat"})
+    client.delete(f"/trips/{trip_id}")
+
+    assert client.post(f"/gaps/{gap['id']}/reopen").status_code == 404

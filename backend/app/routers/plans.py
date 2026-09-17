@@ -11,7 +11,7 @@ from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator
 from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Transit, TripMember, User, utcnow
-from app.planning import OPEN_GAP_STATUSES, clean_link, next_sort_order, ordered_day_plans, time_rank
+from app.planning import OPEN_GAP_STATUSES, clean_link, next_sort_order, ordered_day_plans, time_rank, trip_is_deleted
 from app.routers.choices import undo_choice
 
 router = APIRouter(tags=["plans"])
@@ -21,14 +21,18 @@ TimeOfDay = Literal["", "morning", "afternoon", "evening"]
 
 def _member_day(session: Session, day_id: str, user: User) -> Day:
     day = session.get(Day, day_id)
-    if day is None or session.get(TripMember, (day.trip_id, user.id)) is None:
+    if day is None or session.get(TripMember, (day.trip_id, user.id)) is None or trip_is_deleted(session, day.trip_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return day
 
 
 def _member_activity(session: Session, activity_id: str, user: User) -> Activity:
     activity = session.get(Activity, activity_id)
-    if activity is None or session.get(TripMember, (activity.trip_id, user.id)) is None:
+    if (
+        activity is None
+        or session.get(TripMember, (activity.trip_id, user.id)) is None
+        or trip_is_deleted(session, activity.trip_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return activity
 
@@ -87,7 +91,7 @@ def dismiss_request(
 ) -> None:
     """Drop a "Find ideas" request nobody picked from. Starter gaps can't be dismissed."""
     gap = session.get(Gap, gap_id)
-    if gap is None or session.get(TripMember, (gap.trip_id, user.id)) is None:
+    if gap is None or session.get(TripMember, (gap.trip_id, user.id)) is None or trip_is_deleted(session, gap.trip_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     if gap.origin != "request" or gap.status not in OPEN_GAP_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "This can't be removed.")

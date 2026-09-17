@@ -10,14 +10,18 @@ from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator
 from app.models import Activity, Candidate, Day, Gap, Lodging, Place, TripMember, User
-from app.planning import OPEN_GAP_STATUSES, TIMES_OF_DAY, clean_link, lodging_coverage, next_sort_order
+from app.planning import OPEN_GAP_STATUSES, TIMES_OF_DAY, clean_link, lodging_coverage, next_sort_order, trip_is_deleted
 
 router = APIRouter(tags=["choices"])
 
 
 def _member_candidate(session: Session, candidate_id: str, user: User) -> tuple[Candidate, Gap]:
     candidate = session.get(Candidate, candidate_id)
-    if candidate is None or session.get(TripMember, (candidate.trip_id, user.id)) is None:
+    if (
+        candidate is None
+        or session.get(TripMember, (candidate.trip_id, user.id)) is None
+        or trip_is_deleted(session, candidate.trip_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     gap = session.get(Gap, candidate.gap_id)
     if gap is None:
@@ -27,7 +31,7 @@ def _member_candidate(session: Session, candidate_id: str, user: User) -> tuple[
 
 def _member_gap(session: Session, gap_id: str, user: User) -> Gap:
     gap = session.get(Gap, gap_id)
-    if gap is None or session.get(TripMember, (gap.trip_id, user.id)) is None:
+    if gap is None or session.get(TripMember, (gap.trip_id, user.id)) is None or trip_is_deleted(session, gap.trip_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return gap
 
@@ -274,9 +278,7 @@ def reopen_gap(
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> ChoiceOut:
-    gap = session.get(Gap, gap_id)
-    if gap is None or session.get(TripMember, (gap.trip_id, user.id)) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    gap = _member_gap(session, gap_id, user)
     if gap.status != "answered":
         raise HTTPException(status.HTTP_409_CONFLICT, "Nothing is chosen here yet.")
     chosen = undo_choice(session, gap)
