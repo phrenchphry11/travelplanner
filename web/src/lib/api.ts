@@ -61,6 +61,8 @@ export type Collaborator = { user_id: string; display_name: string; email: strin
 export type PendingInvite = { id: string; email: string; role: string };
 export type Collaborators = { members: Collaborator[]; invites: PendingInvite[] };
 
+export type CardsOut = { cards: string[] };
+
 const TRASH_DAYS = 30;
 
 /** How much longer a trashed trip has before it's gone for good, e.g. "29 days". */
