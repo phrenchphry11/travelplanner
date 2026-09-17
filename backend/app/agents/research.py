@@ -22,6 +22,9 @@ from app.config import get_settings
 log = logging.getLogger(__name__)
 
 SUBMIT_TOOL = "submit_candidates"
+# Rank well in generic search but make poor sources for this agent's "every fact links to a
+# page that backs it up" contract: mostly image boards or stale/wrong user answers, often
+# behind a login wall when the traveler actually clicks through.
 BLOCKED_DOMAINS = ["pinterest.com", "quora.com"]
 
 
