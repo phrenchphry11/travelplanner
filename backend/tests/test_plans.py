@@ -297,3 +297,35 @@ def test_plans_are_private(make_client, engine, session):
     session.expire_all()
     assert session.get(Activity, plan["id"]).name == "Castle"
     assert len(session.exec(select(Gap).where(Gap.trip_id == trip_id, Gap.origin == "request")).all()) == 1
+
+
+def test_removing_a_request_cancels_its_queued_research(make_client, engine):
+    """Research costs money: a request removed before the worker picks it up must never run."""
+    client = make_client()
+    trip_id = _confirm(client)
+    day = _board(client, trip_id)["days"][0]["id"]
+    out = client.post(f"/days/{day}/plan-requests", json={"request": "Dinner"}).json()
+    assert client.post(f"/gaps/{out['gap_id']}/dismiss").status_code == 204
+
+    with Session(engine) as s:
+        job = s.get(ResearchJob, out["job_id"])
+        assert (job.status, job.error) == ("failed", "This request was removed.")
+        assert claim_job(s) is None
+
+
+def test_worker_skips_research_for_a_removed_request(make_client, engine):
+    """Backstop: even if a job was claimed first, a removed request never reaches the paid runner."""
+    client = make_client()
+    trip_id = _confirm(client)
+    day = _board(client, trip_id)["days"][0]["id"]
+    out = client.post(f"/days/{day}/plan-requests", json={"request": "Dinner"}).json()
+    calls = []
+    with Session(engine) as s:
+        job = claim_job(s)
+        gap = s.get(Gap, out["gap_id"])
+        gap.status = "dismissed"
+        s.add(gap)
+        s.commit()
+        run_job(s, job, runner=lambda ctx: calls.append(ctx), fetch=lambda p: [])
+        assert calls == []
+        assert s.get(ResearchJob, out["job_id"]).status == "failed"

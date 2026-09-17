@@ -6,12 +6,13 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator
-from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Transit, TripMember, User
+from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Transit, TripMember, User, utcnow
 from app.planning import OPEN_GAP_STATUSES, next_sort_order, ordered_day_plans, time_rank
 from app.routers.choices import undo_choice
 
@@ -110,6 +111,12 @@ def dismiss_request(
         raise HTTPException(status.HTTP_409_CONFLICT, "This can't be removed.")
     gap.status = "dismissed"
     session.add(gap)
+    # Research costs money; don't run it for a request the traveler just removed.
+    session.exec(
+        update(ResearchJob)
+        .where(ResearchJob.gap_id == gap.id, ResearchJob.status == "queued")
+        .values(status="failed", error="This request was removed.", finished_at=utcnow())
+    )
     session.commit()
 
 
@@ -133,6 +140,13 @@ def _plan_out(a: Activity) -> PlanOut:
     )
 
 
+def _required_name(v: str) -> str:
+    v = v.strip()
+    if not v:
+        raise ValueError("Give your plan a name.")
+    return v
+
+
 class PlanIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     time_of_day: TimeOfDay = ""
@@ -143,10 +157,7 @@ class PlanIn(BaseModel):
     @field_validator("name")
     @classmethod
     def _name(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Give your plan a name.")
-        return v
+        return _required_name(v)
 
     @field_validator("address", "notes")
     @classmethod
@@ -200,12 +211,12 @@ class PlanUpdate(BaseModel):
     @field_validator("name")
     @classmethod
     def _name(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        v = v.strip()
-        if not v:
-            raise ValueError("Give your plan a name.")
-        return v
+        return None if v is None else _required_name(v)
+
+    @field_validator("notes")
+    @classmethod
+    def _strip_notes(cls, v: str | None) -> str | None:
+        return None if v is None else v.strip()
 
     @field_validator("link")
     @classmethod
@@ -248,7 +259,7 @@ def update_plan(
         activity.time_of_day = body.time_of_day
         activity.sort_order = next_sort_order(session, activity.day_id)  # last in its new part of the day
     if body.notes is not None:
-        activity.notes = body.notes.strip()
+        activity.notes = body.notes
     if body.link is not None:
         activity.booking_url = body.link
     session.add(activity)
@@ -315,8 +326,6 @@ def remove_plan(
     session.delete(activity)
     session.flush()  # the plan before its place
     if own_place:
-        place = session.get(Place, place_id)
-        if place is not None:
-            session.delete(place)
+        session.delete(session.get(Place, place_id))
     session.commit()
     return RemoveOut(removed="deleted", gap_id=None)

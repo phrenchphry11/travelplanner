@@ -35,11 +35,9 @@ def counts_as_missing(gap: Gap, days_with_plans: set[str]) -> bool:
     day: once the day has any plan, chosen or added by hand, it stops
     counting, and it counts again if every plan is removed.
     """
-    if gap.status not in OPEN_GAP_STATUSES:
-        return False
-    if gap.kind == "activity" and gap.origin == "starter" and gap.day_id in days_with_plans:
-        return False
-    return True
+    return gap.status in OPEN_GAP_STATUSES and not (
+        gap.kind == "activity" and gap.origin == "starter" and gap.day_id in days_with_plans
+    )
 
 
 def days_with_plans(session: Session, trip_ids: Iterable[str]) -> set[str]:

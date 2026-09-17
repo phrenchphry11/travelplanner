@@ -85,6 +85,8 @@ def build_context(session: Session, job: ResearchJob) -> ResearchContext:
     trip = session.get(Trip, job.trip_id)
     if gap is None or trip is None:
         raise ResearchError("This item no longer exists.")
+    if gap.status == "dismissed":
+        raise ResearchError("This request was removed.")
 
     days = list(session.exec(select(Day).where(Day.trip_id == trip.id).order_by(Day.date)))
     places = {p.id: p.name for p in session.exec(select(Place).where(Place.trip_id == trip.id, Place.kind == "city"))}
@@ -132,8 +134,8 @@ def build_context(session: Session, job: ResearchJob) -> ResearchContext:
 def _stay_description(session: Session, trip_id: str, day: Day) -> str | None:
     """The chosen stay for that night (or, on a departure day, the night before): name, area, address."""
     lodgings = session.exec(select(Lodging).where(Lodging.trip_id == trip_id)).all()
-    stay = next((l for l in lodgings if l.check_in <= day.date < l.check_out), None)
-    stay = stay or next((l for l in lodgings if l.check_out == day.date), None)
+    stay = next((lodging for lodging in lodgings if lodging.check_in <= day.date < lodging.check_out), None)
+    stay = stay or next((lodging for lodging in lodgings if lodging.check_out == day.date), None)
     if stay is None:
         return None
     place = session.get(Place, stay.place_id)

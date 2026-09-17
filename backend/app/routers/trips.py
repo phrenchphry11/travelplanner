@@ -1,3 +1,4 @@
+from collections import Counter
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -78,11 +79,8 @@ def _open_gap_counts(session: Session, trip_ids: list[str]) -> dict[str, int]:
     if not trip_ids:
         return {}
     planned = days_with_plans(session, trip_ids)
-    counts: dict[str, int] = {}
-    for gap in session.exec(select(Gap).where(Gap.trip_id.in_(trip_ids), Gap.status.in_(OPEN_GAP_STATUSES))):
-        if counts_as_missing(gap, planned):
-            counts[gap.trip_id] = counts.get(gap.trip_id, 0) + 1
-    return counts
+    gaps = session.exec(select(Gap).where(Gap.trip_id.in_(trip_ids), Gap.status.in_(OPEN_GAP_STATUSES)))
+    return Counter(g.trip_id for g in gaps if counts_as_missing(g, planned))
 
 
 @router.get("", response_model=list[TripOut])
@@ -166,10 +164,8 @@ def list_days(
     days = session.exec(select(Day).where(Day.trip_id == trip.id).order_by(Day.date)).all()
     places = {p.id: p.name for p in session.exec(select(Place).where(Place.trip_id == trip.id))}
     planned = days_with_plans(session, [trip.id])
-    gap_counts: dict[str | None, int] = {}
-    for gap in session.exec(select(Gap).where(Gap.trip_id == trip.id, Gap.status.in_(OPEN_GAP_STATUSES))):
-        if counts_as_missing(gap, planned):
-            gap_counts[gap.day_id] = gap_counts.get(gap.day_id, 0) + 1
+    gaps = session.exec(select(Gap).where(Gap.trip_id == trip.id, Gap.status.in_(OPEN_GAP_STATUSES)))
+    gap_counts = Counter(g.day_id for g in gaps if counts_as_missing(g, planned))
     return [
         DayOut(
             id=d.id,
