@@ -1,14 +1,16 @@
 """Acting on research options: choose one, say no to one, or change a pick."""
+from collections.abc import Callable
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session, select
 
 from app.auth import current_user
 from app.db import get_session
+from app.geocoding import get_trip_locator
 from app.models import Activity, Candidate, Day, Gap, Lodging, Place, TripMember, User
-from app.planning import OPEN_GAP_STATUSES, TIMES_OF_DAY, lodging_coverage, next_sort_order
+from app.planning import OPEN_GAP_STATUSES, TIMES_OF_DAY, clean_link, lodging_coverage, next_sort_order
 
 router = APIRouter(tags=["choices"])
 
@@ -21,6 +23,13 @@ def _member_candidate(session: Session, candidate_id: str, user: User) -> tuple[
     if gap is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return candidate, gap
+
+
+def _member_gap(session: Session, gap_id: str, user: User) -> Gap:
+    gap = session.get(Gap, gap_id)
+    if gap is None or session.get(TripMember, (gap.trip_id, user.id)) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return gap
 
 
 class ChoiceOut(BaseModel):
@@ -122,6 +131,81 @@ def choose_candidate(
     session.add_all([candidate, gap])
     session.commit()
     return _out(gap, candidate)
+
+
+class ManualLodgingIn(BaseModel):
+    """A stay the traveler already knows about, entered by hand instead of chosen from options."""
+    name: str = Field(min_length=1, max_length=200)
+    address: str = Field(default="", max_length=300)
+    link: str = Field(default="", max_length=1000)
+    confirmation_code: str = Field(default="", max_length=100)
+    notes: str = Field(default="", max_length=2000)
+
+    @field_validator("name")
+    @classmethod
+    def _name(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("Give the place a name.")
+        return v
+
+    @field_validator("address", "confirmation_code", "notes")
+    @classmethod
+    def _strip(cls, v: str) -> str:
+        return v.strip()
+
+    @field_validator("link")
+    @classmethod
+    def _link(cls, v: str) -> str:
+        return clean_link(v)
+
+
+@router.post("/gaps/{gap_id}/lodging", response_model=ChoiceOut, status_code=status.HTTP_201_CREATED)
+def add_lodging(
+    gap_id: str,
+    body: ManualLodgingIn,
+    background: BackgroundTasks,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+    locate: Callable[[str], None] = Depends(get_trip_locator),
+) -> ChoiceOut:
+    """Book a stay the traveler already found, instead of choosing a researched option."""
+    gap = _member_gap(session, gap_id, user)
+    if gap.kind != "lodging":
+        raise HTTPException(status.HTTP_409_CONFLICT, "This isn't a place to stay.")
+    if gap.status not in OPEN_GAP_STATUSES:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Something is already chosen here. Change it first.")
+
+    days = list(session.exec(select(Day).where(Day.trip_id == gap.trip_id).order_by(Day.date)))
+    nights = lodging_coverage(gap, days)
+    if not nights:
+        raise HTTPException(status.HTTP_409_CONFLICT, "There are no nights to book for this stay.")
+
+    place = Place(trip_id=gap.trip_id, name=body.name, kind="lodging", address=body.address)
+    session.add(place)
+    session.flush()  # place before the lodging that references it
+    item = Lodging(
+        trip_id=gap.trip_id,
+        place_id=place.id,
+        check_in=nights[0].date,
+        check_out=nights[-1].date + timedelta(days=1),
+        booking_url=body.link,
+        confirmation_code=body.confirmation_code,
+        status="planned",
+        notes=body.notes,
+    )
+    session.add(item)
+    session.flush()
+    gap.status = "answered"
+    gap.resolved_by_kind = "lodging"
+    gap.resolved_by_id = item.id
+    session.add(gap)
+    session.commit()
+    background.add_task(locate, gap.trip_id)
+    return ChoiceOut(
+        gap_id=gap.id, gap_status=gap.status, candidate_id="", candidate_status="",
+        resolved_by_kind=gap.resolved_by_kind, resolved_by_id=gap.resolved_by_id,
+    )
 
 
 class RejectRequest(BaseModel):

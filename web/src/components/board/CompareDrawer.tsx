@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { isJobActive, nightsLabel, timeOfDayLabel, type Board, type BoardCandidate, type BoardGap } from "../../lib/api";
+import { isJobActive, nightsLabel, timeOfDayLabel, type Board, type BoardCandidate, type BoardGap, type NewLodging } from "../../lib/api";
+import AddLodging from "./AddLodging";
 import CandidateCard from "./CandidateCard";
 
 type Props = {
@@ -16,6 +17,7 @@ type Props = {
   onFindMore: (nudge: string) => void;
   /** Drop a "Find ideas" request nobody wants any more. */
   onDismiss: () => void;
+  onAddLodging?: (lodging: NewLodging) => Promise<void>;
 };
 
 export default function CompareDrawer(props: Props) {
@@ -94,6 +96,10 @@ export default function CompareDrawer(props: Props) {
             {failed ? "Try again" : hasOptions ? "Find more" : "Find options"}
           </button>
         </form>
+      )}
+
+      {gap.kind === "lodging" && !answered && props.onAddLodging && (
+        <AddLodging busy={busy} onAdd={props.onAddLodging} />
       )}
 
       {gap.hidden.length > 0 && (

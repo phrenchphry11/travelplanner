@@ -29,7 +29,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.db import engine
-from app.models import Activity, Candidate, Day, Gap, GeocodeCache, Place, Trip, utcnow
+from app.models import Activity, Candidate, Day, Gap, GeocodeCache, Lodging, Place, Trip, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -347,7 +347,7 @@ def geocode_trip_places(
 
 
 def _locate_options(session: Session, trip_id: str, places: list[Place], codes: list[str], fetch: Fetcher) -> None:
-    """Best-effort pins for option and chosen places near their day's base city."""
+    """Best-effort pins for option, chosen, and manually-entered places near their day's base city."""
     if not places:
         return
     place_ids = [p.id for p in places]
@@ -358,18 +358,29 @@ def _locate_options(session: Session, trip_id: str, places: list[Place], codes: 
     activity_by_place = {a.place_id: a for a in session.exec(
         select(Activity).where(Activity.trip_id == trip_id, Activity.place_id.in_(place_ids))
     )}
+    # Same for a manually-entered stay: a Lodging with a place but no Candidate.
+    lodging_by_place = {l.place_id: l for l in session.exec(
+        select(Lodging).where(Lodging.trip_id == trip_id, Lodging.place_id.in_(place_ids))
+    )}
     for place in places:
         candidate = by_place.get(place.id)
         activity = activity_by_place.get(place.id)
-        if candidate is None and activity is None:
+        lodging = lodging_by_place.get(place.id)
+        if candidate is None and activity is None and lodging is None:
             continue
         if not _claim(session, place):
             continue
         if candidate is not None:
             gap = session.get(Gap, candidate.gap_id)
             day_id = gap.day_id if gap else None
-        else:
+        elif activity is not None:
             day_id = activity.day_id
+        else:
+            # A stay's own day_id isn't stored; its first night is the day it started.
+            first_night = session.exec(
+                select(Day).where(Day.trip_id == trip_id, Day.date == lodging.check_in)
+            ).first()
+            day_id = first_night.id if first_night else None
         day = session.get(Day, day_id) if day_id else None
         base = session.get(Place, day.base_place_id) if day and day.base_place_id else None
         near = (base.lat, base.lng) if base and base.lat is not None and base.lng is not None else None

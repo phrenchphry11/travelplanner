@@ -1,12 +1,15 @@
-import { isJobActive, timeOfDayLabel, type BoardGap } from "../../lib/api";
+import { isJobActive, timeOfDayLabel, type BoardGap, type NewLodging } from "../../lib/api";
+import AddLodging from "./AddLodging";
 
 type Props = {
   gap: BoardGap;
   onOpen: (gap: BoardGap, opts?: { startResearch?: boolean }) => void;
   starting: boolean;
+  busy?: boolean;
+  onAddLodging?: (gap: BoardGap, lodging: NewLodging) => Promise<void>;
 };
 
-export default function GapSlot({ gap, onOpen, starting }: Props) {
+export default function GapSlot({ gap, onOpen, starting, busy, onAddLodging }: Props) {
   const looking = starting || isJobActive(gap.job);
   const failed = gap.job?.status === "failed" && gap.status === "open";
   const count = gap.candidates.length;
@@ -34,6 +37,9 @@ export default function GapSlot({ gap, onOpen, starting }: Props) {
           {count ? `Compare ${count} option${count === 1 ? "" : "s"}` : looking ? "View progress" : "Find options"}
         </button>
       </div>
+      {gap.kind === "lodging" && !looking && onAddLodging && (
+        <AddLodging busy={!!busy} onAdd={(lodging) => onAddLodging(gap, lodging)} />
+      )}
     </div>
   );
 }

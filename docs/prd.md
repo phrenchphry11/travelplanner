@@ -159,6 +159,14 @@ own *Find options*; it only marks an empty day as missing, and on an empty day
 *Find ideas* opens prefilled with "Things to do in <city>". Clicking a missing
 starter item in Overview opens that day. Stays still use *Find options*.
 
+Manual lodging entry (2026-09-16): a gap-level *Add it yourself* form,
+available both in the compare drawer and on the "Where to stay" gap slot,
+books a stay for the gap's exact nights without going through research.
+Fields: name, address (optional, for the map pin), link, confirmation
+number, notes. It shares the "Choose"/"Change" resolution path with
+researched options, so it can be swapped for a researched pick later.
+Confirmation numbers are never included on the public share page.
+
 ### 5.5 Gap detail and candidate comparison (the inbox)
 Opens as a drawer over the board so the map stays visible. Header restates
 the gap in plain words. Body is a horizontal row of candidate cards (see

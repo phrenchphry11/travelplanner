@@ -101,6 +101,7 @@ class BoardLodging(BaseModel):
     check_out: date
     status: str
     booking_url: str
+    confirmation_code: str
     notes: str
 
 
@@ -207,7 +208,8 @@ def get_board(
         ],
         lodgings=[
             BoardLodging(id=l.id, place_id=l.place_id, check_in=l.check_in, check_out=l.check_out,
-                         status=l.status, booking_url=l.booking_url, notes=l.notes)
+                         status=l.status, booking_url=l.booking_url, confirmation_code=l.confirmation_code,
+                         notes=l.notes)
             for l in lodgings
         ],
         activities=[

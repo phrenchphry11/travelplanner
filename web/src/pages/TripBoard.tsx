@@ -18,6 +18,7 @@ import {
   type BoardCandidate,
   type BoardDay,
   type BoardGap,
+  type NewLodging,
   type NewPlan,
   type PlanChanges,
   type TimeOfDay,
@@ -152,6 +153,10 @@ export default function TripBoard() {
     await submit(() => api(`/days/${day.id}/plans`, { method: "POST", body: JSON.stringify(plan) }));
   }
 
+  async function addLodging(gap: BoardGap, lodging: NewLodging) {
+    await submit(() => api(`/gaps/${gap.id}/lodging`, { method: "POST", body: JSON.stringify(lodging) }));
+  }
+
   async function editPlan(activity: BoardActivity, changes: PlanChanges) {
     await submit(() => api(`/activities/${activity.id}`, { method: "PATCH", body: JSON.stringify(changes) }));
   }
@@ -278,7 +283,7 @@ export default function TripBoard() {
         .map((candidate) => ({ candidate, place: candidate.place_id ? placeById.get(candidate.place_id) : undefined }))
         .filter((o): o is MapOption => !!o.place && o.place.lat !== null && o.place.lng !== null)
     : [];
-  const gapProps = { onOpenGap: openGapDrawer, onChange: changeChoice, startingGapIds, busy };
+  const gapProps = { onOpenGap: openGapDrawer, onChange: changeChoice, onAddLodging: addLodging, startingGapIds, busy };
   const planProps = {
     onFindIdeas: findIdeas,
     onAddPlan: addPlan,
@@ -352,6 +357,7 @@ export default function TripBoard() {
               onRestore={(id) => act(() => api(`/candidates/${id}/restore`, { method: "POST" }))}
               onFindMore={(nudge) => startResearch(openGap, nudge)}
               onDismiss={() => setPendingDismiss(openGap)}
+              onAddLodging={(lodging) => addLodging(openGap, lodging)}
             />
           ) : (
             <>

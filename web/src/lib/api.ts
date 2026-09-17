@@ -183,6 +183,15 @@ export type BoardLodging = {
   check_out: string;
   status: string;
   booking_url: string;
+  confirmation_code: string;
+  notes: string;
+};
+
+export type NewLodging = {
+  name: string;
+  address: string;
+  link: string;
+  confirmation_code: string;
   notes: string;
 };
 export type BoardActivity = {

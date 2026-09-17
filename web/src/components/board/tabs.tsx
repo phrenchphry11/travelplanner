@@ -1,4 +1,4 @@
-import type { Board, BoardActivity, BoardDay, BoardGap, BoardLodging, NewPlan, PlanChanges, TimeOfDay } from "../../lib/api";
+import type { Board, BoardActivity, BoardDay, BoardGap, BoardLodging, NewLodging, NewPlan, PlanChanges, TimeOfDay } from "../../lib/api";
 import { gapResolvedBy, isGapOpen, isJobActive, lodgingForNight, shortDate } from "../../lib/api";
 import AddPlan from "./AddPlan";
 import DayPlan from "./DayPlan";
@@ -8,6 +8,7 @@ import PlanItem from "./PlanItem";
 type GapProps = {
   onOpenGap: (gap: BoardGap, opts?: { startResearch?: boolean }) => void;
   onChange: (gap: BoardGap) => void;
+  onAddLodging: (gap: BoardGap, lodging: NewLodging) => Promise<void>;
   startingGapIds: Set<string>;
   busy: boolean;
 };
@@ -28,12 +29,15 @@ function stayItem(board: Board, stay: BoardLodging, props: GapProps) {
     stay.booking_url ? { label: "Book", url: stay.booking_url } : null,
     place?.website_url && place.website_url !== stay.booking_url ? { label: "Website", url: place.website_url } : null,
   ].filter((l): l is { label: string; url: string } => !!l);
+  const notes = [stay.notes, stay.confirmation_code && `Confirmation: ${stay.confirmation_code}`, place?.address]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <PlanItem
       key={stay.id}
       title={place?.name ?? "Stay"}
       detail={`${nights} night${nights === 1 ? "" : "s"} from ${shortDate(stay.check_in)}`}
-      notes={[stay.notes, place?.address].filter(Boolean).join(" · ")}
+      notes={notes}
       links={links}
       onChange={gap ? () => props.onChange(gap) : undefined}
       busy={props.busy}
@@ -155,7 +159,7 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
           );
         })}
         {activityGaps.map((g) => (
-          <GapSlot key={g.id} gap={g} onOpen={props.onOpenGap} starting={props.startingGapIds.has(g.id)} />
+          <GapSlot key={g.id} gap={g} onOpen={props.onOpenGap} starting={props.startingGapIds.has(g.id)} busy={props.busy} onAddLodging={props.onAddLodging} />
         ))}
         {activities.length === 0 && activityGaps.length === 0 && <p className="muted">Nothing planned yet.</p>}
         <AddPlan
@@ -173,7 +177,7 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
         {stay ? (
           stayItem(board, stay, props)
         ) : lodgingGap ? (
-          <GapSlot gap={lodgingGap} onOpen={props.onOpenGap} starting={props.startingGapIds.has(lodgingGap.id)} />
+          <GapSlot gap={lodgingGap} onOpen={props.onOpenGap} starting={props.startingGapIds.has(lodgingGap.id)} busy={props.busy} onAddLodging={props.onAddLodging} />
         ) : isLastDay ? (
           <p className="muted">Last day of the trip. No night to book.</p>
         ) : (
@@ -212,7 +216,7 @@ export function LodgingTab({ board, onOpenDay, ...props }: { board: Board; onOpe
               {chosen ? (
                 stayItem(board, chosen, props)
               ) : isGapOpen(g) ? (
-                <GapSlot gap={g} onOpen={props.onOpenGap} starting={props.startingGapIds.has(g.id)} />
+                <GapSlot gap={g} onOpen={props.onOpenGap} starting={props.startingGapIds.has(g.id)} busy={props.busy} onAddLodging={props.onAddLodging} />
               ) : (
                 <span className="gaps">Sorted</span>
               )}

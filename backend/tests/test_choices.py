@@ -183,3 +183,105 @@ def test_locate_option_without_base_requires_trip_country(session):
 def test_locate_option_skips_roads(session):
     fetch = lambda p: [GeoResult(38.7, -9.1, "Some road", "highway", "pt")]  # noqa: E731
     assert locate_option(session, "Hotel", "Road 1", "Lisbon", ["pt"], (38.72, -9.14), fetch) is None
+
+
+def _lodging_gap(client, trip_id):
+    board = client.get(f"/trips/{trip_id}/board").json()
+    return next(g for g in board["gaps"] if g["kind"] == "lodging")
+
+
+def test_add_lodging_manually_books_the_stays_nights(make_client, session):
+    client = make_client()
+    trip_id = _confirm(client)
+    gap = _lodging_gap(client, trip_id)
+
+    res = client.post(f"/gaps/{gap['id']}/lodging", json={
+        "name": "My Aunt's Flat",
+        "address": "Rua A 1, Lisbon",
+        "link": "airbnb.com/rooms/123",
+        "confirmation_code": "ABC123",
+        "notes": "Free, staying with family",
+    })
+    assert res.status_code == 201
+    out = res.json()
+    assert (out["gap_status"], out["candidate_id"], out["resolved_by_kind"]) == ("answered", "", "lodging")
+
+    stay = session.get(Lodging, out["resolved_by_id"])
+    assert (stay.check_in.isoformat(), stay.check_out.isoformat()) == ("2027-05-01", "2027-05-04")  # 3 Lisbon nights
+    assert stay.booking_url == "https://airbnb.com/rooms/123"
+    assert stay.confirmation_code == "ABC123"
+    assert stay.status == "planned"
+    assert stay.notes == "Free, staying with family"
+    place = session.get(Place, stay.place_id)
+    assert (place.name, place.kind, place.address) == ("My Aunt's Flat", "lodging", "Rua A 1, Lisbon")
+
+    board = client.get(f"/trips/{trip_id}/board").json()
+    board_gap = next(g for g in board["gaps"] if g["id"] == gap["id"])
+    assert board_gap["status"] == "answered" and board_gap["resolved_by_id"] == stay.id
+    lodging_out = next(l for l in board["lodgings"] if l["id"] == stay.id)
+    assert lodging_out["confirmation_code"] == "ABC123"
+
+
+def test_add_lodging_manually_requires_a_name_and_valid_link(make_client):
+    client = make_client()
+    trip_id = _confirm(client)
+    gap = _lodging_gap(client, trip_id)
+    assert client.post(f"/gaps/{gap['id']}/lodging", json={"name": "   "}).status_code == 422
+    assert client.post(f"/gaps/{gap['id']}/lodging", json={"name": "x", "link": "javascript:alert(1)"}).status_code == 422
+
+
+def test_add_lodging_manually_rejects_wrong_kind_and_already_answered(make_client, engine):
+    client = make_client()
+    trip_id = _confirm(client)
+    board = client.get(f"/trips/{trip_id}/board").json()
+    activity_gap = next(g for g in board["gaps"] if g["kind"] == "activity")
+    assert client.post(f"/gaps/{activity_gap['id']}/lodging", json={"name": "x"}).status_code == 409
+
+    lodging_gap = _lodging_gap(client, trip_id)
+    assert client.post(f"/gaps/{lodging_gap['id']}/lodging", json={"name": "First"}).status_code == 201
+    assert client.post(f"/gaps/{lodging_gap['id']}/lodging", json={"name": "Second"}).status_code == 409
+
+
+def test_add_lodging_manually_is_private(make_client):
+    owner = make_client("owner")
+    trip_id = _confirm(owner)
+    gap = _lodging_gap(owner, trip_id)
+    stranger = make_client("stranger")
+    assert stranger.post(f"/gaps/{gap['id']}/lodging", json={"name": "x"}).status_code == 404
+
+
+def test_manual_lodging_can_be_changed_like_a_chosen_one(make_client, session):
+    client = make_client()
+    trip_id = _confirm(client)
+    gap = _lodging_gap(client, trip_id)
+    stay_id = client.post(f"/gaps/{gap['id']}/lodging", json={"name": "My Aunt's Flat"}).json()["resolved_by_id"]
+
+    out = client.post(f"/gaps/{gap['id']}/reopen").json()
+    assert out["gap_status"] == "open"
+    session.expire_all()
+    assert session.get(Lodging, stay_id) is None
+    board = client.get(f"/trips/{trip_id}/board").json()
+    assert board["lodgings"] == []
+
+
+def test_manual_lodging_place_is_pinned_near_the_base_city(make_client, session):
+    client = make_client()
+    trip_id = _confirm(client)
+    lisbon = session.exec(select(Place).where(Place.trip_id == trip_id, Place.name == "Lisbon")).one()
+    lisbon.lat, lisbon.lng = 38.72, -9.14
+    session.add(lisbon)
+    session.commit()
+
+    gap = _lodging_gap(client, trip_id)
+    stay_id = client.post(f"/gaps/{gap['id']}/lodging", json={
+        "name": "My Aunt's Flat", "address": "Rua Near 1, Lisbon",
+    }).json()["resolved_by_id"]
+
+    from app.geocoding import geocode_trip_places
+    fetch = lambda params: [GeoResult(38.71, -9.13, "Rua Near", "building", "pt")]  # noqa: E731
+    geocode_trip_places(trip_id, session_factory=lambda: Session(session.get_bind()), fetch=fetch)
+
+    board = client.get(f"/trips/{trip_id}/board").json()
+    place_id = session.get(Lodging, stay_id).place_id
+    place = next(p for p in board["places"] if p["id"] == place_id)
+    assert (place["lat"], place["precision"]) == (38.71, "approximate")

@@ -1,8 +1,6 @@
 """A day's plans: ask for ideas, add one yourself, edit, reorder, and remove."""
-import re
 from collections.abc import Callable
 from typing import Literal
-from urllib.parse import urlsplit
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -13,13 +11,12 @@ from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator
 from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Transit, TripMember, User, utcnow
-from app.planning import OPEN_GAP_STATUSES, next_sort_order, ordered_day_plans, time_rank
+from app.planning import OPEN_GAP_STATUSES, clean_link, next_sort_order, ordered_day_plans, time_rank
 from app.routers.choices import undo_choice
 
 router = APIRouter(tags=["plans"])
 
 TimeOfDay = Literal["", "morning", "afternoon", "evening"]
-_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:(?!\d)")  # "mailto:" but not "example.com:8080"
 
 
 def _member_day(session: Session, day_id: str, user: User) -> Day:
@@ -34,21 +31,6 @@ def _member_activity(session: Session, activity_id: str, user: User) -> Activity
     if activity is None or session.get(TripMember, (activity.trip_id, user.id)) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return activity
-
-
-def _clean_link(value: str) -> str:
-    """'example.com/tour' -> 'https://example.com/tour'. Only web links are kept."""
-    value = value.strip()
-    if not value:
-        return ""
-    if _SCHEME.match(value) and not value.lower().startswith(("http://", "https://")):
-        raise ValueError("That link doesn't look like a web address.")  # mailto:, javascript:, ftp://
-    if "://" not in value:
-        value = f"https://{value}"
-    parts = urlsplit(value)
-    if parts.scheme not in ("http", "https") or not parts.netloc or " " in value:
-        raise ValueError("That link doesn't look like a web address.")
-    return value
 
 
 # ---- Find ideas -------------------------------------------------------------
@@ -167,7 +149,7 @@ class PlanIn(BaseModel):
     @field_validator("link")
     @classmethod
     def _link(cls, v: str) -> str:
-        return _clean_link(v)
+        return clean_link(v)
 
 
 @router.post("/days/{day_id}/plans", response_model=PlanOut, status_code=status.HTTP_201_CREATED)
@@ -221,7 +203,7 @@ class PlanUpdate(BaseModel):
     @field_validator("link")
     @classmethod
     def _link(cls, v: str | None) -> str | None:
-        return None if v is None else _clean_link(v)
+        return None if v is None else clean_link(v)
 
 
 def _is_own_place(session: Session, place_id: str, activity_id: str) -> bool:

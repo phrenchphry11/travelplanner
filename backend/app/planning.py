@@ -1,5 +1,7 @@
 """Plan rules shared by the board, trips, choice, and plan endpoints."""
+import re
 from collections.abc import Iterable
+from urllib.parse import urlsplit
 
 from sqlmodel import Session, select
 
@@ -7,6 +9,23 @@ from app.models import Activity, Day, Gap
 
 OPEN_GAP_STATUSES = ("open", "researching")
 TIMES_OF_DAY = ("morning", "afternoon", "evening")
+
+_SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:(?!\d)")  # "mailto:" but not "example.com:8080"
+
+
+def clean_link(value: str) -> str:
+    """'example.com/tour' -> 'https://example.com/tour'. Only web links are kept."""
+    value = value.strip()
+    if not value:
+        return ""
+    if _SCHEME.match(value) and not value.lower().startswith(("http://", "https://")):
+        raise ValueError("That link doesn't look like a web address.")  # mailto:, javascript:, ftp://
+    if "://" not in value:
+        value = f"https://{value}"
+    parts = urlsplit(value)
+    if parts.scheme not in ("http", "https") or not parts.netloc or " " in value:
+        raise ValueError("That link doesn't look like a web address.")
+    return value
 
 
 def lodging_coverage(gap: Gap, days: list[Day]) -> list[Day]:
