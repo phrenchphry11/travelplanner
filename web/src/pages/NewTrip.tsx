@@ -2,7 +2,14 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { Link, useNavigate } from "react-router-dom";
 import SkeletonEditor from "../components/SkeletonEditor";
 import TopBar from "../components/TopBar";
-import { useApi, type ChatMessage, type IntakeTurnResponse, type Trip, type TripDraft } from "../lib/api";
+import {
+  useApi,
+  type ChatMessage,
+  type IntakeSession,
+  type IntakeTurnResponse,
+  type Trip,
+  type TripDraft,
+} from "../lib/api";
 
 const OPENING = "Tell me about the trip you're thinking about. Where, roughly when, who's going, and what you like to do.";
 const EXAMPLE = "Portugal, 10 days in May, two of us, we like food, wine, and walking. Fly into Lisbon.";
@@ -24,11 +31,49 @@ export default function NewTrip() {
   const [thinking, setThinking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages, thinking]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<IntakeSession | null>("/intake/session")
+      .then((s) => {
+        if (cancelled || !s) return;
+        setSessionId(s.id);
+        setMessages(s.messages);
+        setDraft(s.current_draft);
+      })
+      .catch(() => {
+        // No session to resume, or it's expired; start fresh.
+      })
+      .finally(() => {
+        if (!cancelled) setResuming(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function startOver() {
+    if (sessionId) {
+      try {
+        await api(`/intake/session/${sessionId}`, { method: "DELETE" });
+      } catch {
+        // Best effort; it'll expire on its own either way.
+      }
+    }
+    setSessionId(null);
+    setMessages([]);
+    setDraft(null);
+    setInput("");
+    setError(null);
+  }
 
   async function send(e?: FormEvent) {
     e?.preventDefault();
@@ -42,8 +87,9 @@ export default function NewTrip() {
     try {
       const res = await api<IntakeTurnResponse>("/intake/turn", {
         method: "POST",
-        body: JSON.stringify({ messages: next, current_draft: draft }),
+        body: JSON.stringify({ messages: next, current_draft: draft, session_id: sessionId }),
       });
+      setSessionId(res.session_id);
       setMessages([...next, { role: "assistant", content: res.reply, kind: res.kind }]);
       if (res.draft) {
         // Keep a start date the traveler already picked if the new draft has none.
@@ -80,6 +126,7 @@ export default function NewTrip() {
           destinations: draft.destinations,
           interests: draft.interests,
           days: draft.days,
+          session_id: sessionId,
         }),
       });
       navigate(`/trips/${trip.id}`, { replace: true });
@@ -90,12 +137,21 @@ export default function NewTrip() {
   }
 
   const blocker = draft ? missingForConfirm(draft) : null;
-  const busy = thinking || saving;
+  const busy = thinking || saving || resuming;
 
   return (
     <main className="page narrow-wide">
       <TopBar />
       <h1>Start a trip</h1>
+
+      {sessionId && messages.length > 0 && (
+        <p className="muted small">
+          Picking up where you left off.{" "}
+          <button type="button" className="link-button" disabled={busy} onClick={() => void startOver()}>
+            Start over
+          </button>
+        </p>
+      )}
 
       <section className="chat" aria-live="polite">
         <div className="bubble assistant">{OPENING}</div>

@@ -20,7 +20,7 @@ from app.config import get_settings
 from app.db import engine
 from app import geocoding
 from app.geocoding import Fetcher
-from app.trash import purge_deleted_trips
+from app.trash import expire_unconfirmed_intake_sessions, purge_deleted_trips
 from app.models import Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Trip, utcnow
 from app.planning import ordered_day_plans
 
@@ -280,6 +280,9 @@ def main() -> None:
                 purged = purge_deleted_trips(session)
                 if purged:
                     log.info("purged %d trip(s) from the trash", purged)
+                expired = expire_unconfirmed_intake_sessions(session)
+                if expired:
+                    log.info("expired %d unconfirmed intake session(s)", expired)
                 last_purge = time.monotonic()
             job = claim_job(session)
             if job is None:

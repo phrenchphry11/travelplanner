@@ -120,6 +120,13 @@ export type IntakeTurnResponse = {
   reply: string;
   kind: "question" | "draft";
   draft: TripDraft | null;
+  session_id: string;
+};
+
+export type IntakeSession = {
+  id: string;
+  messages: ChatMessage[];
+  current_draft: TripDraft | null;
 };
 
 /** Add n days to a YYYY-MM-DD string and format like "Sat, May 1". */

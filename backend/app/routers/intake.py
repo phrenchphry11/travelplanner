@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.agents.intake import (
     MAX_DAYS,
@@ -17,8 +17,9 @@ from app.agents.intake import (
 from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator
-from app.models import Day, Gap, Place, Trip, TripMember, User
+from app.models import Day, Gap, IntakeSession, Place, Trip, TripMember, User, utcnow
 from app.routers.trips import TripOut, to_trip_out
+from app.trash import INTAKE_SESSION_EXPIRY
 
 router = APIRouter(prefix="/intake", tags=["intake"])
 
@@ -26,6 +27,7 @@ router = APIRouter(prefix="/intake", tags=["intake"])
 class IntakeTurnRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1, max_length=30)
     current_draft: TripDraft | None = None
+    session_id: str | None = None
 
     @model_validator(mode="after")
     def _check_roles(self) -> "IntakeTurnRequest":
@@ -41,19 +43,82 @@ class IntakeTurnResponse(BaseModel):
     reply: str
     kind: str
     draft: TripDraft | None
+    session_id: str
+
+
+def _own_open_session(session: Session, user: User, session_id: str | None) -> IntakeSession | None:
+    """The caller's session_id, if it's real, theirs, and not already linked to a trip."""
+    if session_id is None:
+        return None
+    s = session.get(IntakeSession, session_id)
+    if s is None or s.user_id != user.id or s.trip_id is not None:
+        return None
+    return s
 
 
 @router.post("/turn", response_model=IntakeTurnResponse)
 def intake_turn(
     body: IntakeTurnRequest,
-    _user: User = Depends(current_user),
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
     runner: IntakeRunner = Depends(get_intake_runner),
 ) -> IntakeTurnResponse:
     try:
         turn = runner(body.messages, body.current_draft, date.today())
     except IntakeError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
-    return IntakeTurnResponse(reply=turn.reply, kind=turn.kind, draft=turn.draft)
+
+    messages = [m.model_dump() for m in body.messages] + [
+        {"role": "assistant", "content": turn.reply, "kind": turn.kind}
+    ]
+    draft = turn.draft.model_dump() if turn.draft else (body.current_draft.model_dump() if body.current_draft else None)
+    record = _own_open_session(session, user, body.session_id)
+    if record is None:
+        record = IntakeSession(user_id=user.id, messages=messages, current_draft=draft)
+    else:
+        record.messages = messages
+        record.current_draft = draft
+        record.updated_at = utcnow()
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+    return IntakeTurnResponse(reply=turn.reply, kind=turn.kind, draft=turn.draft, session_id=record.id)
+
+
+class IntakeSessionOut(BaseModel):
+    id: str
+    messages: list[ChatMessage]
+    current_draft: TripDraft | None
+
+
+@router.get("/session", response_model=IntakeSessionOut | None)
+def latest_session(
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> IntakeSessionOut | None:
+    """The traveler's most recent unfinished intake chat, if any, to resume after a refresh."""
+    cutoff = utcnow() - INTAKE_SESSION_EXPIRY
+    record = session.exec(
+        select(IntakeSession)
+        .where(IntakeSession.user_id == user.id, IntakeSession.trip_id.is_(None), IntakeSession.updated_at > cutoff)
+        .order_by(IntakeSession.updated_at.desc())
+    ).first()
+    if record is None:
+        return None
+    return IntakeSessionOut(id=record.id, messages=record.messages, current_draft=record.current_draft)
+
+
+@router.delete("/session/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def discard_session(
+    session_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> None:
+    record = _own_open_session(session, user, session_id)
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Session not found")
+    session.delete(record)
+    session.commit()
 
 
 class ConfirmDay(BaseModel):
@@ -69,6 +134,7 @@ class ConfirmDraft(BaseModel):
     destinations: list[str] = Field(default_factory=list, max_length=20)
     interests: list[str] = Field(default_factory=list, max_length=20)
     days: list[ConfirmDay] = Field(min_length=1, max_length=MAX_DAYS)
+    session_id: str | None = None
 
     @model_validator(mode="after")
     def _strip(self) -> "ConfirmDraft":
@@ -168,6 +234,10 @@ def confirm_draft(
             prompt=f"What to do in {d.base_city} on {_fmt(day.date)}",
         ))
     session.add_all(gaps)
+    record = _own_open_session(session, user, body.session_id)
+    if record is not None:
+        record.trip_id = trip.id
+        session.add(record)
     session.commit()
     session.refresh(trip)
     background.add_task(locate, trip.id)

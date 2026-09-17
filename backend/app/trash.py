@@ -8,6 +8,7 @@ from app.models import (
     Candidate,
     Day,
     Gap,
+    IntakeSession,
     Lodging,
     Place,
     ResearchJob,
@@ -19,9 +20,10 @@ from app.models import (
 )
 
 PURGE_AFTER = timedelta(days=30)
+INTAKE_SESSION_EXPIRY = timedelta(days=14)
 
 # Children before parents; each table is flushed before the next one is deleted.
-_CHILD_MODELS = (ResearchJob, Source, Candidate, Gap, Activity, Transit, Lodging, Day, Place, TripMember)
+_CHILD_MODELS = (ResearchJob, Source, Candidate, Gap, Activity, Transit, Lodging, Day, Place, TripMember, IntakeSession)
 
 
 def hard_delete_trip(session: Session, trip: Trip) -> None:
@@ -41,3 +43,15 @@ def purge_deleted_trips(session: Session, older_than: timedelta = PURGE_AFTER) -
         hard_delete_trip(session, trip)
         session.commit()
     return len(trips)
+
+
+def expire_unconfirmed_intake_sessions(session: Session, older_than: timedelta = INTAKE_SESSION_EXPIRY) -> int:
+    """Delete intake chats that were never turned into a trip. Returns how many."""
+    cutoff = utcnow() - older_than
+    stale = session.exec(
+        select(IntakeSession).where(IntakeSession.trip_id.is_(None), IntakeSession.updated_at <= cutoff)
+    ).all()
+    for s in stale:
+        session.delete(s)
+    session.commit()
+    return len(stale)

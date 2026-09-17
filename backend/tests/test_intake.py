@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlmodel import select
@@ -13,7 +13,8 @@ from app.agents.intake import (
     get_intake_runner,
 )
 from app.main import app
-from app.models import Day, Gap, Place, Trip
+from app.models import Day, Gap, IntakeSession, Place, Trip, utcnow
+from app.trash import expire_unconfirmed_intake_sessions, hard_delete_trip
 
 
 def _draft(cities: list[str]) -> TripDraft:
@@ -103,6 +104,93 @@ def test_build_messages_appends_draft_to_last_user_turn_only():
     assert "kind" not in msgs[1]
     assert msgs[2]["content"].startswith("10 days\n\n<current_draft>")
     assert history[2].content == "10 days"  # input not mutated
+
+
+def test_turn_creates_and_resumes_session(make_client, fake_runner, session):
+    client = make_client()
+    fake_runner(IntakeTurn(reply="How long?", kind="question", draft=None))
+    res = client.post("/intake/turn", json={"messages": [{"role": "user", "content": "Portugal"}]})
+    session_id = res.json()["session_id"]
+    assert session_id
+
+    stored = session.get(IntakeSession, session_id)
+    assert stored.trip_id is None
+    assert [m["content"] for m in stored.messages] == ["Portugal", "How long?"]
+
+    resumed = client.get("/intake/session").json()
+    assert resumed["id"] == session_id
+    assert resumed["messages"][-1]["content"] == "How long?"
+
+    fake_runner(IntakeTurn(reply="Here's a start.", kind="draft", draft=_draft(["Lisbon"])))
+    res2 = client.post("/intake/turn", json={
+        "messages": [
+            {"role": "user", "content": "Portugal"},
+            {"role": "assistant", "content": "How long?", "kind": "question"},
+            {"role": "user", "content": "A week"},
+        ],
+        "session_id": session_id,
+    })
+    assert res2.json()["session_id"] == session_id
+    session.refresh(stored)
+    assert len(stored.messages) == 4
+    assert stored.current_draft["days"][0]["base_city"] == "Lisbon"
+
+
+def test_session_get_returns_null_with_no_history(make_client):
+    assert make_client().get("/intake/session").json() is None
+
+
+def test_session_is_scoped_to_its_owner(make_client, fake_runner):
+    fake_runner(IntakeTurn(reply="Q?", kind="question", draft=None))
+    session_id = make_client("user_a").post(
+        "/intake/turn", json={"messages": [{"role": "user", "content": "hi"}]}
+    ).json()["session_id"]
+    assert make_client("user_b").get("/intake/session").json() is None
+    assert make_client("user_b").delete(f"/intake/session/{session_id}").status_code == 404
+
+
+def test_discard_session_starts_over(make_client, fake_runner):
+    client = make_client()
+    fake_runner(IntakeTurn(reply="Q?", kind="question", draft=None))
+    session_id = client.post("/intake/turn", json={"messages": [{"role": "user", "content": "hi"}]}).json()["session_id"]
+    assert client.delete(f"/intake/session/{session_id}").status_code == 204
+    assert client.get("/intake/session").json() is None
+    assert client.delete(f"/intake/session/{session_id}").status_code == 404
+
+
+def test_confirm_links_session_to_trip_and_it_no_longer_resumes(make_client, fake_runner, session):
+    client = make_client()
+    fake_runner(IntakeTurn(reply="Here's a start.", kind="draft", draft=_draft(["Lisbon"])))
+    session_id = client.post(
+        "/intake/turn", json={"messages": [{"role": "user", "content": "Portugal, a week"}]}
+    ).json()["session_id"]
+
+    trip_id = client.post(
+        "/intake/confirm", json=_confirm_body(["Lisbon"], session_id=session_id)
+    ).json()["id"]
+
+    stored = session.get(IntakeSession, session_id)
+    assert stored.trip_id == trip_id
+    assert client.get("/intake/session").json() is None  # no longer an unconfirmed session to resume
+
+    trip = session.get(Trip, trip_id)
+    hard_delete_trip(session, trip)
+    session.commit()
+    assert session.get(IntakeSession, session_id) is None  # deleted with its trip
+
+
+def test_expire_unconfirmed_intake_sessions(make_client, fake_runner, session):
+    client = make_client()
+    fake_runner(IntakeTurn(reply="Q?", kind="question", draft=None))
+    session_id = client.post("/intake/turn", json={"messages": [{"role": "user", "content": "hi"}]}).json()["session_id"]
+
+    stored = session.get(IntakeSession, session_id)
+    stored.updated_at = utcnow() - timedelta(days=15)
+    session.add(stored)
+    session.commit()
+
+    assert expire_unconfirmed_intake_sessions(session) == 1
+    assert session.get(IntakeSession, session_id) is None
 
 
 def _confirm_body(cities, start="2027-05-01", **extra):

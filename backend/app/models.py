@@ -79,6 +79,23 @@ class TripInvite(SQLModel, table=True):
     accepted_at: datetime | None = None
 
 
+class IntakeSession(SQLModel, table=True):
+    """The intake chat for a trip that hasn't been confirmed yet (or was, and is kept for reference).
+
+    Created on the first /intake/turn, updated each turn so a page refresh can
+    resume it. Linked to its trip on /intake/confirm. Deleted with the trip,
+    or expired unconfirmed after PURGE_AFTER (see app.trash).
+    """
+    __tablename__ = "intake_sessions"
+    id: str = Field(default_factory=new_id, primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    trip_id: str | None = Field(default=None, foreign_key="trips.id", index=True)
+    messages: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    current_draft: dict | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
 class Place(SQLModel, table=True):
     __tablename__ = "places"
     id: str = Field(default_factory=new_id, primary_key=True)
