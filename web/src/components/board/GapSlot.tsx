@@ -1,4 +1,4 @@
-import { isJobActive, type BoardGap } from "../../lib/api";
+import { isJobActive, timeOfDayLabel, type BoardGap } from "../../lib/api";
 
 type Props = {
   gap: BoardGap;
@@ -13,7 +13,10 @@ export default function GapSlot({ gap, onOpen, starting }: Props) {
 
   return (
     <div className={`gap-slot${looking ? " looking" : ""}${count ? " has-options" : ""}`}>
-      <p className="gap-prompt">{gap.prompt}</p>
+      <p className="gap-prompt">
+        {gap.prompt}
+        {gap.time_of_day && <span className="muted small"> · {timeOfDayLabel(gap.time_of_day)}</span>}
+      </p>
       {looking && (
         <p className="gap-status" role="status">
           <span className="dot-pulse" aria-hidden /> Looking for options…

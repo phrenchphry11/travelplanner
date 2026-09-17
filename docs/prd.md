@@ -130,6 +130,35 @@ Implemented 2026-09-16 (first cut):
   are deferred until there are hotels and activities to show.
 - Editing: click any item to open a side drawer with its fields.
 
+Implemented 2026-09-16 (plans for the day):
+- A day holds any number of plans. *Add a plan* on the Day tab offers
+  *Find ideas* (the traveler's own request plus an optional time of day) or
+  *Add it yourself* (name, time of day, optional address, link, notes).
+- *Find ideas* creates a request gap (`origin = request`) in the traveler's
+  words and queues research at once, from that button only, then opens the
+  compare drawer. Research for any day's plans also sees the plans already
+  on that day and the chosen stay for that night (name, neighborhood,
+  address). A request nobody picked from can be removed from the drawer.
+- A plan added by hand gets a map pin if its address or name is found within
+  40 km of the day's base city; otherwise it simply has no pin.
+- Plans are ordered morning, afternoon, evening, then any time; up/down
+  arrows reorder within the same part of the day. *Edit* changes name, time
+  of day, link, and notes. *Remove* deletes a plan added by hand; removing
+  a chosen option reopens its gap so the other options come back.
+- Missing rule: the starter gap ("What to do in Lisbon on May 2") stands for
+  an empty day. It counts as missing only while the day has no plans at all
+  (chosen or added by hand); it isn't changed, just not counted, so it
+  counts again if every plan is removed. Once the day has plans, the Day tab
+  hides it unless it has options or a search running. Open lodging gaps and
+  open requests always count.
+
+Single entry point for day plans (2026-09-16): *Add a plan* is the only way
+to add plans to a day, via *Find ideas* (research on the traveler's request)
+or *Add it yourself*. The starter "What to do in..." item no longer offers its
+own *Find options*; it only marks an empty day as missing, and on an empty day
+*Find ideas* opens prefilled with "Things to do in <city>". Clicking a missing
+starter item in Overview opens that day. Stays still use *Find options*.
+
 ### 5.5 Gap detail and candidate comparison (the inbox)
 Opens as a drawer over the board so the map stays visible. Header restates
 the gap in plain words. Body is a horizontal row of candidate cards (see
@@ -155,7 +184,8 @@ Implemented 2026-09-16:
   Hovering a card highlights its pin; clicking a pin scrolls to its card.
 - Research only starts from a button labeled *Find options* or *Find more*,
   never from simply opening the drawer, because each run costs money.
-- *Add manually* is still deferred to the manual add/edit epic.
+- Plans for a day can be added by hand from the Day tab (see 5.4). Adding a
+  stay by hand is still deferred to the manual add/edit epic.
 
 ### 5.6 Shared itinerary (public)
 Mobile-first. Vertical day list; tapping a day expands its timeline. Sticky

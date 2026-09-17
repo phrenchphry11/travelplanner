@@ -54,11 +54,11 @@ def _fill_trip(session, trip_id: str) -> None:
         cost=987.65, currency="EUR", status="booked", notes="€140–€180 per night",
     ))
     session.add_all([
-        Activity(trip_id=trip_id, day_id=d2.id, name="Fado night", start_time="evening", sort_order=0, notes="Live music"),
-        Activity(trip_id=trip_id, day_id=d2.id, name="Custard tarts", place_id=cafe.id, start_time="morning", sort_order=1,
+        Activity(trip_id=trip_id, day_id=d2.id, name="Fado night", time_of_day="evening", sort_order=0, notes="Live music"),
+        Activity(trip_id=trip_id, day_id=d2.id, name="Custard tarts", place_id=cafe.id, time_of_day="morning", sort_order=1,
                  booking_url="https://tarts.example"),
-        Activity(trip_id=trip_id, day_id=d2.id, name="Wander", start_time="", sort_order=2),
-        Activity(trip_id=trip_id, day_id=d2.id, name="Tower visit", start_time="afternoon", sort_order=3),
+        Activity(trip_id=trip_id, day_id=d2.id, name="Wander", time_of_day="", sort_order=2),
+        Activity(trip_id=trip_id, day_id=d2.id, name="Tower visit", time_of_day="afternoon", sort_order=3),
     ])
     gap = Gap(trip_id=trip_id, day_id=d3.id, kind="lodging", prompt="GAP-PROMPT Where to stay in Porto")
     session.add(gap)

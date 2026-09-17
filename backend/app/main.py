@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import board, choices, health, intake, me, share, trips
+from app.routers import board, choices, health, intake, me, plans, share, trips
 
 logging.basicConfig(level=logging.INFO)
 settings = get_settings()
@@ -26,3 +26,4 @@ app.include_router(intake.router)
 app.include_router(board.router)
 app.include_router(choices.router)
 app.include_router(share.router)
+app.include_router(plans.router)

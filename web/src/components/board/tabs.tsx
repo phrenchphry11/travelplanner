@@ -1,5 +1,7 @@
-import type { Board, BoardActivity, BoardDay, BoardGap, BoardLodging } from "../../lib/api";
-import { gapResolvedBy, isGapOpen, lodgingForNight, shortDate } from "../../lib/api";
+import type { Board, BoardActivity, BoardDay, BoardGap, BoardLodging, NewPlan, PlanChanges, TimeOfDay } from "../../lib/api";
+import { gapResolvedBy, isGapOpen, isJobActive, lodgingForNight, shortDate } from "../../lib/api";
+import AddPlan from "./AddPlan";
+import DayPlan from "./DayPlan";
 import GapSlot from "./GapSlot";
 import PlanItem from "./PlanItem";
 
@@ -39,31 +41,19 @@ function stayItem(board: Board, stay: BoardLodging, props: GapProps) {
   );
 }
 
-function activityItem(board: Board, a: BoardActivity, props: GapProps) {
-  const place = placeOf(board, a.place_id);
-  const gap = gapResolvedBy(board, a.id);
-  const links = [
-    a.booking_url ? { label: "Book", url: a.booking_url } : null,
-    place?.website_url && place.website_url !== a.booking_url ? { label: "Website", url: place.website_url } : null,
-  ].filter((l): l is { label: string; url: string } => !!l);
-  return (
-    <PlanItem
-      key={a.id}
-      title={a.name}
-      detail={a.start_time ? `in the ${a.start_time}` : undefined}
-      notes={a.notes}
-      links={links}
-      onChange={gap ? () => props.onChange(gap) : undefined}
-      busy={props.busy}
-    />
-  );
-}
+export type PlanProps = {
+  onFindIdeas: (day: BoardDay, request: string, timeOfDay: TimeOfDay) => Promise<void>;
+  onAddPlan: (day: BoardDay, plan: NewPlan) => Promise<void>;
+  onEditPlan: (activity: BoardActivity, changes: PlanChanges) => Promise<void>;
+  onMovePlan: (activity: BoardActivity, direction: "up" | "down") => void;
+  onRemovePlan: (activity: BoardActivity) => void;
+};
 
 export function OverviewTab({ board, onOpenDay, onOpenGap }: { board: Board; onOpenDay: (day: BoardDay) => void; onOpenGap: (gap: BoardGap) => void }) {
   const dayById = new Map(board.days.map((d) => [d.id, d]));
   const dayIndex = new Map(board.days.map((d, i) => [d.id, i]));
   const missing = board.gaps
-    .filter(isGapOpen)
+    .filter((g) => g.missing)
     .sort((a, b) => (dayIndex.get(a.day_id ?? "") ?? 0) - (dayIndex.get(b.day_id ?? "") ?? 0));
 
   return (
@@ -76,13 +66,15 @@ export function OverviewTab({ board, onOpenDay, onOpenGap }: { board: Board; onO
           {missing.map((g) => {
             const day = g.day_id ? dayById.get(g.day_id) : undefined;
             const count = g.candidates.length;
+            // An empty day's plans are added from the Day tab's "Add a plan", not the options drawer.
+            const opensDay = !!day && g.kind === "activity" && g.origin === "starter" && count === 0 && !isJobActive(g.job);
             return (
               <li key={g.id}>
-                <button type="button" className="row-button" onClick={() => onOpenGap(g)}>
+                <button type="button" className="row-button" onClick={() => (opensDay ? onOpenDay(day) : onOpenGap(g))}>
                   <span className="day-date">{day ? shortDate(day.date) : "Whole trip"}</span>
                   <span>{g.prompt}</span>
                   <span className={count ? "gaps has-gaps" : "muted small"}>
-                    {count ? `${count} to compare` : g.kind === "lodging" ? "Stay" : "Plans"}
+                    {count ? `${count} to compare` : g.kind === "lodging" ? "Stay" : "Add plans"}
                   </span>
                 </button>
               </li>
@@ -94,7 +86,7 @@ export function OverviewTab({ board, onOpenDay, onOpenGap }: { board: Board; onO
       <h3>Days</h3>
       <ol className="day-summary">
         {board.days.map((d) => {
-          const open = board.gaps.filter((g) => isGapOpen(g) && g.day_id === d.id).length;
+          const open = board.gaps.filter((g) => g.missing && g.day_id === d.id).length;
           const city = placeName(board, d.base_place_id);
           return (
             <li key={d.id}>
@@ -114,10 +106,20 @@ export function OverviewTab({ board, onOpenDay, onOpenGap }: { board: Board; onO
   );
 }
 
-export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay } & GapProps) {
+export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay } & GapProps & PlanProps) {
   const isLastDay = board.days[board.days.length - 1]?.id === day.id;
+  // Already in order: morning, afternoon, evening, any time.
   const activities = board.activities.filter((a) => a.day_id === day.id);
-  const activityGaps = board.gaps.filter((g) => g.kind === "activity" && g.day_id === day.id && isGapOpen(g));
+  // "Add a plan" is the single way to add plans. The starter "What to do in..." item only
+  // marks an empty day as missing; it's shown here just when it already has options or a
+  // search going from before. Requests the traveler made always show until resolved.
+  const activityGaps = board.gaps.filter(
+    (g) =>
+      g.kind === "activity" &&
+      g.day_id === day.id &&
+      isGapOpen(g) &&
+      (g.origin === "request" || g.candidates.length > 0 || isJobActive(g.job) || props.startingGapIds.has(g.id)),
+  );
   const stay = lodgingForNight(board, day.date);
   const lodgingGap = board.gaps.find((g) => g.kind === "lodging" && isGapOpen(g) && g.covers_day_ids.includes(day.id));
   const city = placeName(board, day.base_place_id);
@@ -132,11 +134,38 @@ export function DayTab({ board, day, ...props }: { board: Board; day: BoardDay }
 
       <section className="slot-group">
         <h4>Plans for the day</h4>
-        {activities.map((a) => activityItem(board, a, props))}
+        {activities.map((a, i) => {
+          const gap = gapResolvedBy(board, a.id);
+          const prev = activities[i - 1];
+          const next = activities[i + 1];
+          return (
+            <DayPlan
+              key={a.id}
+              activity={a}
+              place={placeOf(board, a.place_id)}
+              chosen={!!gap}
+              canMoveUp={!!prev && prev.time_of_day === a.time_of_day}
+              canMoveDown={!!next && next.time_of_day === a.time_of_day}
+              busy={props.busy}
+              onEdit={(changes) => props.onEditPlan(a, changes)}
+              onMove={(direction) => props.onMovePlan(a, direction)}
+              onRemove={() => props.onRemovePlan(a)}
+              onChange={gap ? () => props.onChange(gap) : undefined}
+            />
+          );
+        })}
         {activityGaps.map((g) => (
           <GapSlot key={g.id} gap={g} onOpen={props.onOpenGap} starting={props.startingGapIds.has(g.id)} />
         ))}
-        {activities.length === 0 && activityGaps.length === 0 && <p className="muted">Nothing planned.</p>}
+        {activities.length === 0 && activityGaps.length === 0 && <p className="muted">Nothing planned yet.</p>}
+        <AddPlan
+          key={day.id}
+          city={city}
+          busy={props.busy}
+          suggestedRequest={activities.length === 0 ? (city ? `Things to do in ${city}` : "Things to do") : ""}
+          onFindIdeas={(request, time) => props.onFindIdeas(day, request, time)}
+          onAdd={(plan) => props.onAddPlan(day, plan)}
+        />
       </section>
 
       <section className="slot-group">
@@ -201,7 +230,8 @@ export function ActivitiesTab({ board, onOpenDay }: { board: Board; onOpenDay: (
       <ol className="day-summary">
         {board.days.map((d) => {
           const planned = board.activities.filter((a) => a.day_id === d.id);
-          const open = board.gaps.some((g) => g.kind === "activity" && g.day_id === d.id && isGapOpen(g));
+          const toReview = board.gaps.some((g) => g.kind === "activity" && g.day_id === d.id && g.missing);
+          const label = planned.length === 0 ? "Needs plans" : toReview ? "Ideas to review" : "Planned";
           return (
             <li key={d.id}>
               <button type="button" className="row-button" onClick={() => onOpenDay(d)}>
@@ -209,7 +239,7 @@ export function ActivitiesTab({ board, onOpenDay }: { board: Board; onOpenDay: (
                 <span>
                   {planned.length > 0 ? planned.map((a) => a.name).join(", ") : <span className="muted">{d.title}</span>}
                 </span>
-                <span className={open ? "gaps has-gaps" : "gaps"}>{open ? "Needs plans" : "Planned"}</span>
+                <span className={label !== "Planned" ? "gaps has-gaps" : "gaps"}>{label}</span>
               </button>
             </li>
           );

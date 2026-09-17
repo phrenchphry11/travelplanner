@@ -20,7 +20,8 @@ from app.config import get_settings
 from app.db import engine
 from app import geocoding
 from app.geocoding import Fetcher
-from app.models import Candidate, Day, Gap, Place, ResearchJob, Source, Trip, utcnow
+from app.models import Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Trip, utcnow
+from app.planning import ordered_day_plans
 
 log = logging.getLogger("worker")
 _running = True
@@ -96,6 +97,15 @@ def build_context(session: Session, job: ResearchJob) -> ResearchContext:
             city = places.get(d.base_place_id or "", "")
             nearby.append(f"{d.date:%a %b} {d.date.day}: {d.title}" + (f" ({city})" if city and city != d.title else ""))
 
+    planned: list[str] = []
+    stay: str | None = None
+    if day is not None and gap.kind == "activity":
+        planned = [
+            a.name + (f" ({a.time_of_day})" if a.time_of_day else "")
+            for a in ordered_day_plans(session, day.id)
+        ]
+        stay = _stay_description(session, trip.id, day)
+
     previous = list(session.exec(select(Candidate).where(Candidate.gap_id == gap.id)))
     return ResearchContext(
         trip_title=trip.title,
@@ -110,9 +120,29 @@ def build_context(session: Session, job: ResearchJob) -> ResearchContext:
         base_city=places.get(day.base_place_id or "") if day else None,
         nearby_days=nearby,
         nudge=job.nudge,
+        time_of_day=gap.time_of_day,
+        is_request=gap.origin == "request",
+        planned_that_day=planned,
+        stay=stay,
         already_suggested=[c.payload.get("name", "") for c in previous if c.status != "rejected" and c.payload.get("name")],
         rejected=[(c.payload.get("name", ""), c.rejection_reason) for c in previous if c.status == "rejected"],
     )
+
+
+def _stay_description(session: Session, trip_id: str, day: Day) -> str | None:
+    """The chosen stay for that night (or, on a departure day, the night before): name, area, address."""
+    lodgings = session.exec(select(Lodging).where(Lodging.trip_id == trip_id)).all()
+    stay = next((l for l in lodgings if l.check_in <= day.date < l.check_out), None)
+    stay = stay or next((l for l in lodgings if l.check_out == day.date), None)
+    if stay is None:
+        return None
+    place = session.get(Place, stay.place_id)
+    if place is None:
+        return None
+    option = session.exec(select(Candidate).where(Candidate.place_id == place.id)).first()
+    neighborhood = ((option.payload or {}).get("neighborhood") if option else None) or ""
+    parts = [place.name, neighborhood, place.address]
+    return ", ".join(p for p in parts if p)
 
 
 def _place_kind(gap_kind: str, c: CandidateIn) -> str:

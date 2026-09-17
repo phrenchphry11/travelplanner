@@ -29,7 +29,7 @@ from sqlmodel import Session, select
 
 from app.config import get_settings
 from app.db import engine
-from app.models import Candidate, Day, Gap, GeocodeCache, Place, Trip, utcnow
+from app.models import Activity, Candidate, Day, Gap, GeocodeCache, Place, Trip, utcnow
 
 log = logging.getLogger(__name__)
 
@@ -350,18 +350,30 @@ def _locate_options(session: Session, trip_id: str, places: list[Place], codes: 
     """Best-effort pins for option and chosen places near their day's base city."""
     if not places:
         return
+    place_ids = [p.id for p in places]
     by_place = {c.place_id: c for c in session.exec(
-        select(Candidate).where(Candidate.trip_id == trip_id, Candidate.place_id.in_([p.id for p in places]))
+        select(Candidate).where(Candidate.trip_id == trip_id, Candidate.place_id.in_(place_ids))
+    )}
+    # Plans the traveler added themselves have a place but no research option.
+    activity_by_place = {a.place_id: a for a in session.exec(
+        select(Activity).where(Activity.trip_id == trip_id, Activity.place_id.in_(place_ids))
     )}
     for place in places:
         candidate = by_place.get(place.id)
-        if candidate is None or not _claim(session, place):
+        activity = activity_by_place.get(place.id)
+        if candidate is None and activity is None:
             continue
-        gap = session.get(Gap, candidate.gap_id)
-        day = session.get(Day, gap.day_id) if gap and gap.day_id else None
+        if not _claim(session, place):
+            continue
+        if candidate is not None:
+            gap = session.get(Gap, candidate.gap_id)
+            day_id = gap.day_id if gap else None
+        else:
+            day_id = activity.day_id
+        day = session.get(Day, day_id) if day_id else None
         base = session.get(Place, day.base_place_id) if day and day.base_place_id else None
         near = (base.lat, base.lng) if base and base.lat is not None and base.lng is not None else None
-        payload = candidate.payload or {}
+        payload = (candidate.payload or {}) if candidate is not None else {}
         try:
             result = locate_option(
                 session, payload.get("name") or place.name, payload.get("address") or place.address or None,

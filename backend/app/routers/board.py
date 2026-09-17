@@ -10,13 +10,12 @@ from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator, needs_lookup
 from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, TripMember, User
-from app.planning import lodging_coverage
+from app.planning import OPEN_GAP_STATUSES, counts_as_missing, lodging_coverage, plan_order_key
 from app.routers.trips import TripOut, get_member_trip, to_trip_out
 
 router = APIRouter(tags=["board"])
 
 ACTIVE_JOB_STATUSES = ("queued", "running")
-OPEN_GAP_STATUSES = ("open", "researching")
 
 
 class BoardDay(BaseModel):
@@ -76,7 +75,10 @@ class BoardGap(BaseModel):
     day_id: str | None
     kind: str
     prompt: str
+    origin: str  # starter | request
+    time_of_day: str
     status: str
+    missing: bool  # counts toward "What's still missing"
     # Lodging gaps: the days whose night this stay covers. Others: just their day.
     covers_day_ids: list[str]
     job: BoardJob | None
@@ -109,6 +111,8 @@ class BoardActivity(BaseModel):
     kind: str
     place_id: str | None
     start_time: str
+    time_of_day: str
+    sort_order: int
     status: str
     booking_url: str
     notes: str
@@ -136,9 +140,12 @@ def get_board(
     places = list(session.exec(select(Place).where(Place.trip_id == trip.id)))
     gaps = list(session.exec(select(Gap).where(Gap.trip_id == trip.id).order_by(Gap.created_at)))
     lodgings = list(session.exec(select(Lodging).where(Lodging.trip_id == trip.id).order_by(Lodging.check_in)))
-    activities = list(session.exec(
-        select(Activity).where(Activity.trip_id == trip.id).order_by(Activity.day_id, Activity.sort_order)
-    ))
+    # Each day's plans in the order they happen: morning, afternoon, evening, anytime.
+    activities = sorted(
+        session.exec(select(Activity).where(Activity.trip_id == trip.id)),
+        key=lambda a: (a.day_id, *plan_order_key(a), a.id),
+    )
+    days_with_plans = {a.day_id for a in activities}
 
     # Latest job per gap.
     jobs: dict[str, ResearchJob] = {}
@@ -164,9 +171,9 @@ def get_board(
     if pending_lookup:
         background.add_task(locate, trip.id)
 
-    open_count = sum(1 for g in gaps if g.status in OPEN_GAP_STATUSES)
+    missing = {g.id for g in gaps if counts_as_missing(g, days_with_plans)}
     return Board(
-        trip=to_trip_out(trip, open_gap_count=open_count),
+        trip=to_trip_out(trip, open_gap_count=len(missing)),
         days=[BoardDay(id=d.id, date=d.date, title=d.title, summary=d.summary, base_place_id=d.base_place_id) for d in days],
         places=[
             BoardPlace(
@@ -182,7 +189,10 @@ def get_board(
                 day_id=g.day_id,
                 kind=g.kind,
                 prompt=g.prompt,
+                origin=g.origin,
+                time_of_day=g.time_of_day,
                 status=g.status,
+                missing=g.id in missing,
                 covers_day_ids=[d.id for d in lodging_coverage(g, days)] if g.kind == "lodging" else ([g.day_id] if g.day_id else []),
                 job=BoardJob(id=jobs[g.id].id, status=jobs[g.id].status, error=jobs[g.id].error) if g.id in jobs else None,
                 candidates=[_candidate_out(c, sources_by_candidate.get(c.id, [])) for c in candidates_by_gap.get(g.id, [])],
@@ -202,7 +212,7 @@ def get_board(
         ],
         activities=[
             BoardActivity(id=a.id, day_id=a.day_id, name=a.name, kind=a.kind, place_id=a.place_id,
-                          start_time=a.start_time, status=a.status, booking_url=a.booking_url, notes=a.notes)
+                          start_time=a.start_time, time_of_day=a.time_of_day, sort_order=a.sort_order, status=a.status, booking_url=a.booking_url, notes=a.notes)
             for a in activities
         ],
     )

@@ -87,10 +87,11 @@ Anything you do on a day that isn't sleeping or moving.
 | kind | `meal`, `sight`, `tour`, `outdoors`, `shopping`, `rest`, `other` |
 | place_id | nullable |
 | start_time, end_time | nullable, local |
+| time_of_day | `morning`, `afternoon`, `evening`, or empty for any time |
 | booking_url | |
 | status | `idea`, `shortlisted`, `planned`, `booked` |
 | notes | |
-| sort_order | for the day timeline |
+| sort_order | order within the day's time-of-day group |
 
 ### Gap
 An open question the app or user identified. The thing the agent works on.
@@ -99,6 +100,8 @@ An open question the app or user identified. The thing the agent works on.
 | id, trip_id, day_id | day nullable for trip-wide gaps |
 | kind | `lodging`, `transit`, `activity`, `food`, `question` |
 | prompt | "Where do we sleep in Porto on May 4?" |
+| origin | `starter` (made with the trip) or `request` (the traveler's *Find ideas*) |
+| time_of_day | requests only: `morning`, `afternoon`, `evening`, or empty |
 | status | `open`, `researching`, `answered`, `dismissed` |
 | resolved_by_id | the plan record that closed it, nullable |
 

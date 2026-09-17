@@ -13,6 +13,7 @@ from sqlmodel import Session, select
 from app.auth import current_user
 from app.db import get_session
 from app.models import Activity, Day, Lodging, Place, Trip, User, new_share_slug, utcnow
+from app.planning import plan_order_key
 from app.routers.trips import get_member_trip
 
 router = APIRouter(tags=["share"])
@@ -20,7 +21,6 @@ router = APIRouter(tags=["share"])
 NOINDEX = {"X-Robots-Tag": "noindex, nofollow"}
 # Unpublishing should take effect right away, so nothing may cache the payload.
 PUBLIC_HEADERS = {**NOINDEX, "Cache-Control": "no-store"}
-TIME_ORDER = {"morning": 0, "afternoon": 1, "evening": 2}
 
 
 # --- Owner management -------------------------------------------------------
@@ -89,7 +89,7 @@ class PublicStay(BaseModel):
 
 class PublicPlan(BaseModel):
     name: str
-    time: str  # "morning" | "afternoon" | "evening" | free text | ""
+    time: str  # "morning" | "afternoon" | "evening" | "" (any time)
     place: PublicPlace | None
     booking_url: str
     website_url: str
@@ -119,10 +119,6 @@ def _place(p: Place | None) -> PublicPlace | None:
     return PublicPlace(name=p.name, address=p.address, lat=p.lat if pinned else None, lng=p.lng if pinned else None)
 
 
-def _plan_order(a: Activity) -> tuple[int, int]:
-    return (TIME_ORDER.get(a.start_time.strip().lower(), 3), a.sort_order)
-
-
 def build_public_trip(session: Session, trip: Trip) -> PublicTrip:
     places = {p.id: p for p in session.exec(select(Place).where(Place.trip_id == trip.id))}
     days = list(session.exec(select(Day).where(Day.trip_id == trip.id).order_by(Day.date)))
@@ -148,13 +144,13 @@ def build_public_trip(session: Session, trip: Trip) -> PublicTrip:
                 plans=[
                     PublicPlan(
                         name=a.name,
-                        time=a.start_time.strip(),
+                        time=a.time_of_day,
                         place=_place(places.get(a.place_id)) if a.place_id else None,
                         booking_url=a.booking_url,
                         website_url=website(a.place_id),
                         notes=a.notes,
                     )
-                    for a in sorted(plans_by_day.get(d.id, []), key=_plan_order)
+                    for a in sorted(plans_by_day.get(d.id, []), key=plan_order_key)
                 ],
             )
             for d in days
