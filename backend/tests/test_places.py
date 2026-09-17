@@ -137,3 +137,13 @@ def test_saved_place_outside_trip_countries_gets_no_pin(make_client, session):
     board = client.get(f"/trips/{trip_id}/board").json()
     place = next(p for p in board["places"] if p["id"] == place_id)
     assert place["lat"] is None
+
+
+def test_cannot_edit_or_remove_a_saved_place_on_a_deleted_trip(make_client):
+    client = make_client()
+    trip_id = _confirm(client, cities=["Lisbon", "Porto"])
+    place_id = _add(client, trip_id).json()["id"]
+    client.delete(f"/trips/{trip_id}")
+
+    assert client.patch(f"/places/{place_id}", json={"name": "x"}).status_code == 404
+    assert client.delete(f"/places/{place_id}").status_code == 404

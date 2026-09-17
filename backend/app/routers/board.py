@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator, needs_lookup
-from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, TripMember, User
+from app.models import Activity, Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Trip, TripMember, User
 from app.planning import OPEN_GAP_STATUSES, counts_as_missing, lodging_coverage, plan_order_key
 from app.routers.trips import TripOut, get_member_trip, to_trip_out
 
@@ -274,6 +274,9 @@ def start_research(
 ) -> JobOut:
     gap = session.get(Gap, gap_id)
     if gap is None or session.get(TripMember, (gap.trip_id, user.id)) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    trip = session.get(Trip, gap.trip_id)
+    if trip is None or trip.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     if gap.status not in OPEN_GAP_STATUSES:
         raise HTTPException(status.HTTP_409_CONFLICT, "This is already filled in")

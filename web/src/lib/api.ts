@@ -53,7 +53,17 @@ export type Trip = {
   status: "dreaming" | "planning" | "booked" | "done";
   open_gap_count: number;
   share_slug: string | null; // set while a read-only link is published
+  deleted_at: string | null; // set while the trip is in the trash
 };
+
+const TRASH_DAYS = 30;
+
+/** How much longer a trashed trip has before it's gone for good, e.g. "29 days". */
+export function daysLeftInTrash(deletedAt: string): string {
+  const daysGone = Math.floor((Date.now() - new Date(deletedAt).getTime()) / 86_400_000);
+  const left = Math.max(0, TRASH_DAYS - daysGone);
+  return `${left} day${left === 1 ? "" : "s"}`;
+}
 
 export const STATUS_LABELS: Record<Trip["status"], string> = {
   dreaming: "Dreaming",

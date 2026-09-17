@@ -263,3 +263,9 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
 .plan-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .move-buttons { display: inline-flex; gap: 4px; }
 .move-buttons button.icon { padding: 2px 8px; line-height: 1.2; }
+
+/* Trash */
+.trash-section { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); }
+.trash-list { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; }
+.trash-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.trash-list li p { margin: 2px 0 0; }

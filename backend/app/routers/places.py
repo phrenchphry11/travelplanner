@@ -9,7 +9,7 @@ from sqlmodel import Session
 from app.auth import current_user
 from app.db import get_session
 from app.geocoding import get_trip_locator
-from app.models import Place, TripMember, User
+from app.models import Place, Trip, TripMember, User
 from app.planning import clean_link
 from app.routers.trips import get_member_trip
 
@@ -21,6 +21,9 @@ SavedPlaceKind = Literal["coffee", "food", "sight", "shop", "other"]
 def _member_place(session: Session, place_id: str, user: User) -> Place:
     place = session.get(Place, place_id)
     if place is None or not place.saved or session.get(TripMember, (place.trip_id, user.id)) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    trip = session.get(Trip, place.trip_id)
+    if trip is None or trip.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     return place
 

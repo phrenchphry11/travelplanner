@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import TopBar from "../components/TopBar";
-import { formatDateRange, STATUS_LABELS, useApi, type Trip } from "../lib/api";
+import { daysLeftInTrash, formatDateRange, STATUS_LABELS, useApi, type Trip } from "../lib/api";
 
 function gapLabel(count: number): string {
   if (count === 0) return "Nothing missing";
@@ -11,17 +11,35 @@ function gapLabel(count: number): string {
 export default function TripList() {
   const api = useApi();
   const [trips, setTrips] = useState<Trip[] | null>(null);
+  const [trash, setTrash] = useState<Trip[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api<Trip[]>("/trips")
+      .then(setTrips)
+      .catch((e: Error) => setError(e.message));
+    api<Trip[]>("/trips?deleted=true")
+      .then(setTrash)
+      .catch(() => {}); // the trash is a nice-to-have; don't block the page on it
+  }, [api]);
 
   useEffect(() => {
-    let cancelled = false;
-    api<Trip[]>("/trips")
-      .then((data) => !cancelled && setTrips(data))
-      .catch((e: Error) => !cancelled && setError(e.message));
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
+    load();
+  }, [load]);
+
+  async function restore(trip: Trip) {
+    setBusyId(trip.id);
+    try {
+      await api(`/trips/${trip.id}/restore`, { method: "POST" });
+      load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   return (
     <main className="page">
@@ -38,7 +56,7 @@ export default function TripList() {
       {error && <p className="error">We couldn't load your trips. {error}</p>}
       {trips === null && !error && <p className="muted">Loading…</p>}
 
-      {trips && trips.length === 0 && (
+      {trips && trips.length === 0 && trash.length === 0 && (
         <section className="empty">
           <h2>Plan your first trip</h2>
           <p>
@@ -66,6 +84,31 @@ export default function TripList() {
             </li>
           ))}
         </ul>
+      )}
+
+      {trash.length > 0 && (
+        <section className="trash-section">
+          <button type="button" className="link-button" onClick={() => setShowTrash((s) => !s)}>
+            Recently deleted ({trash.length}) {showTrash ? "▾" : "▸"}
+          </button>
+          {showTrash && (
+            <ul className="trash-list">
+              {trash.map((t) => (
+                <li key={t.id}>
+                  <div>
+                    <strong>{t.title}</strong>
+                    <p className="muted small">
+                      {formatDateRange(t.start_date, t.end_date)} · {t.deleted_at && daysLeftInTrash(t.deleted_at)} left before it's gone for good
+                    </p>
+                  </div>
+                  <button type="button" className="button secondary small-button" onClick={() => restore(t)} disabled={busyId === t.id}>
+                    Restore
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </main>
   );

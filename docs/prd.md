@@ -247,6 +247,18 @@ Implemented (2026-09-16):
   list opening today's day while traveling, links to booking, website and
   Google Maps. Sets `robots: noindex` and `referrer: no-referrer` meta tags.
 
+### Trash (2026-09-17)
+
+Deleting a trip sets `deleted_at` instead of removing it. Deleted trips
+are excluded everywhere: the trip list, the board and its sub-resources,
+starting research, the worker, geocoding, and the public share link
+(management and the public payload both 404). A "Recently deleted"
+section on the trip list lists the owner's deleted trips with a days-left
+countdown and one-click Restore. After 30 days a background job in the
+worker (hourly check) permanently removes a trashed trip and everything
+in it, children first. Deleting and restoring are owner-only, matching
+delete's existing rule.
+
 ## 6. Agent behavior
 
 **Intake agent** (synchronous, in the API): parses free text into a structured

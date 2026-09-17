@@ -51,6 +51,7 @@ class Trip(SQLModel, table=True):
     interests: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     status: str = "dreaming"  # dreaming | planning | booked | done
     share_slug: str | None = Field(default=None, index=True, unique=True)
+    deleted_at: datetime | None = Field(default=None, index=True)  # in the trash until purged
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

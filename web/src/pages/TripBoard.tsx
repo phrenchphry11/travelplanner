@@ -57,6 +57,7 @@ export default function TripBoard() {
   const [pendingRemove, setPendingRemove] = useState<BoardActivity | null>(null);
   const [pendingDismiss, setPendingDismiss] = useState<BoardGap | null>(null);
   const [pendingRemovePlace, setPendingRemovePlace] = useState<BoardPlace | null>(null);
+  const [pendingDeleteTrip, setPendingDeleteTrip] = useState(false);
   const polls = useRef(0);
 
   const load = useCallback(async () => {
@@ -267,9 +268,10 @@ export default function TripBoard() {
     }
   }
 
-  async function deleteTrip() {
-    if (!board || !window.confirm(`Delete "${board.trip.title}"? This can't be undone.`)) return;
+  async function confirmDeleteTrip() {
+    if (!board) return;
     await act(() => api(`/trips/${board.trip.id}`, { method: "DELETE" }));
+    setPendingDeleteTrip(false);
     navigate("/trips", { replace: true });
   }
 
@@ -338,7 +340,7 @@ export default function TripBoard() {
           >
             Share{board.trip.share_slug && <span className="share-on"> · link on</span>}
           </button>
-          <button type="button" className="danger small-button" onClick={deleteTrip} disabled={busy}>
+          <button type="button" className="danger small-button" onClick={() => setPendingDeleteTrip(true)} disabled={busy}>
             Delete trip
           </button>
         </div>
@@ -502,6 +504,21 @@ export default function TripBoard() {
             <strong>{pendingRemovePlace.name}</strong> will be removed from your saved places. This can't be undone.
           </p>
         )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingDeleteTrip}
+        title="Delete this trip?"
+        confirmLabel="Delete it"
+        tone="danger"
+        busy={busy}
+        onConfirm={confirmDeleteTrip}
+        onCancel={() => setPendingDeleteTrip(false)}
+      >
+        <p>
+          <strong>{board.trip.title}</strong> goes to your trash. You can restore it from the trip
+          list for 30 days, after which it's gone for good.
+        </p>
       </ConfirmDialog>
     </main>
   );

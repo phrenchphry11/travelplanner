@@ -311,7 +311,7 @@ def geocode_trip_places(
     fetch = fetch or default_fetcher()
     with session_factory() as session:
         trip = session.get(Trip, trip_id)
-        if trip is None:
+        if trip is None or trip.deleted_at is not None:
             return
         cities = session.exec(select(Place).where(Place.trip_id == trip_id, Place.kind == "city")).all()
         options = session.exec(select(Place).where(Place.trip_id == trip_id, Place.kind != "city")).all()

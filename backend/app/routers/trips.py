@@ -1,5 +1,5 @@
 from collections import Counter
-from datetime import date
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
@@ -7,20 +7,7 @@ from sqlmodel import Session, select
 
 from app.auth import current_user
 from app.db import get_session
-from app.models import (
-    Activity,
-    Candidate,
-    Day,
-    Gap,
-    Lodging,
-    Place,
-    ResearchJob,
-    Source,
-    Transit,
-    Trip,
-    TripMember,
-    User,
-)
+from app.models import Day, Gap, Place, Trip, TripMember, User, utcnow
 from app.planning import OPEN_GAP_STATUSES, counts_as_missing, days_with_plans
 
 router = APIRouter(prefix="/trips", tags=["trips"])
@@ -51,6 +38,7 @@ class TripOut(BaseModel):
     status: str
     open_gap_count: int = 0
     share_slug: str | None = None  # set while the trip is published
+    deleted_at: datetime | None = None  # set while the trip is in the trash
 
 
 def to_trip_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
@@ -62,14 +50,20 @@ def to_trip_out(trip: Trip, open_gap_count: int = 0) -> TripOut:
         status=trip.status,
         open_gap_count=open_gap_count,
         share_slug=trip.share_slug,
+        deleted_at=trip.deleted_at,
     )
 
 
-def get_member_trip(session: Session, trip_id: str, user: User) -> Trip:
-    """Return the trip if the user is a member, else 404 (never leak existence)."""
+def _member_trip(session: Session, trip_id: str, user: User) -> Trip | None:
+    """The trip if the user is a member, deleted or not. None if they aren't."""
     member = session.get(TripMember, (trip_id, user.id))
-    trip = session.get(Trip, trip_id) if member else None
-    if trip is None:
+    return session.get(Trip, trip_id) if member else None
+
+
+def get_member_trip(session: Session, trip_id: str, user: User) -> Trip:
+    """A member's trip, unless it's in the trash: 404 either way (never leak existence)."""
+    trip = _member_trip(session, trip_id, user)
+    if trip is None or trip.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Trip not found")
     return trip
 
@@ -85,15 +79,18 @@ def _open_gap_counts(session: Session, trip_ids: list[str]) -> dict[str, int]:
 
 @router.get("", response_model=list[TripOut])
 def list_trips(
+    deleted: bool = False,
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> list[TripOut]:
+    """Set deleted=true for the trash instead of the trip list."""
+    is_deleted = Trip.deleted_at.is_not(None) if deleted else Trip.deleted_at.is_(None)
     trips = list(
         session.exec(
             select(Trip)
             .join(TripMember, TripMember.trip_id == Trip.id)
-            .where(TripMember.user_id == user.id)
-            .order_by(Trip.created_at.desc())
+            .where(TripMember.user_id == user.id, is_deleted)
+            .order_by((Trip.deleted_at if deleted else Trip.created_at).desc())
         )
     )
     counts = _open_gap_counts(session, [t.id for t in trips])
@@ -133,16 +130,31 @@ def delete_trip(
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ) -> None:
+    """Move the trip to the trash. It can be restored until it's purged (see app.trash)."""
     trip = get_member_trip(session, trip_id, user)
     if trip.owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can delete a trip")
-    # Children before parents, flushing each table so deletes run in this order.
-    for model in (ResearchJob, Source, Candidate, Gap, Activity, Transit, Lodging, Day, Place, TripMember):
-        for row in session.exec(select(model).where(model.trip_id == trip.id)):
-            session.delete(row)
-        session.flush()
-    session.delete(trip)
+    trip.deleted_at = utcnow()
+    session.add(trip)
     session.commit()
+
+
+@router.post("/{trip_id}/restore", response_model=TripOut)
+def restore_trip(
+    trip_id: str,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> TripOut:
+    trip = _member_trip(session, trip_id, user)
+    if trip is None or trip.deleted_at is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Trip not found")
+    if trip.owner_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the owner can restore a trip")
+    trip.deleted_at = None
+    session.add(trip)
+    session.commit()
+    session.refresh(trip)
+    return to_trip_out(trip, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
 
 
 class DayOut(BaseModel):

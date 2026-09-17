@@ -172,7 +172,11 @@ def build_public_trip(session: Session, trip: Trip) -> PublicTrip:
 # No auth dependency on purpose: anyone with the link can read it.
 @router.get("/share/{slug}", response_model=PublicTrip)
 def get_shared_trip(slug: str, response: Response, session: Session = Depends(get_session)) -> PublicTrip:
-    trip = session.exec(select(Trip).where(Trip.share_slug == slug)).first() if 0 < len(slug) <= 64 else None
+    trip = (
+        session.exec(select(Trip).where(Trip.share_slug == slug, Trip.deleted_at.is_(None))).first()
+        if 0 < len(slug) <= 64
+        else None
+    )
     if trip is None:
         # Same answer for unknown, unpublished, and regenerated-away links.
         raise HTTPException(status.HTTP_404_NOT_FOUND, "This link isn't working. Ask whoever sent it for a new one.", headers=PUBLIC_HEADERS)

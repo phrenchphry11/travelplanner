@@ -20,6 +20,7 @@ from app.config import get_settings
 from app.db import engine
 from app import geocoding
 from app.geocoding import Fetcher
+from app.trash import purge_deleted_trips
 from app.models import Candidate, Day, Gap, Lodging, Place, ResearchJob, Source, Trip, utcnow
 from app.planning import ordered_day_plans
 
@@ -85,6 +86,8 @@ def build_context(session: Session, job: ResearchJob) -> ResearchContext:
     trip = session.get(Trip, job.trip_id)
     if gap is None or trip is None:
         raise ResearchError("This item no longer exists.")
+    if trip.deleted_at is not None:
+        raise ResearchError("This trip has been deleted.")
     if gap.status == "dismissed":
         raise ResearchError("This request was removed.")
 
@@ -267,11 +270,17 @@ def main() -> None:
     poll = get_settings().worker_poll_seconds
     log.info("worker started, polling every %.1fs", poll)
     last_recovery = 0.0
+    last_purge = 0.0
     while _running:
         with Session(engine) as session:
             if time.monotonic() - last_recovery > 60:
                 recover_stale_jobs(session)
                 last_recovery = time.monotonic()
+            if time.monotonic() - last_purge > 3600:
+                purged = purge_deleted_trips(session)
+                if purged:
+                    log.info("purged %d trip(s) from the trash", purged)
+                last_purge = time.monotonic()
             job = claim_job(session)
             if job is None:
                 time.sleep(poll)
