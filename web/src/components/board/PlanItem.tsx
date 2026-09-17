@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 type Props = {
   title: string;
   detail?: string;
@@ -5,9 +7,11 @@ type Props = {
   links: { label: string; url: string }[];
   onChange?: () => void;
   busy?: boolean;
+  /** Replaces the Change button with custom controls. */
+  actions?: ReactNode;
 };
 
-export default function PlanItem({ title, detail, notes, links, onChange, busy }: Props) {
+export default function PlanItem({ title, detail, notes, links, onChange, busy, actions }: Props) {
   return (
     <div className="plan-item">
       <div>
@@ -24,10 +28,14 @@ export default function PlanItem({ title, detail, notes, links, onChange, busy }
           </p>
         )}
       </div>
-      {onChange && (
-        <button type="button" className="link-button" onClick={onChange} disabled={busy}>
-          Change
-        </button>
+      {actions ? (
+        <div className="plan-actions">{actions}</div>
+      ) : (
+        onChange && (
+          <button type="button" className="link-button" onClick={onChange} disabled={busy}>
+            Change
+          </button>
+        )
       )}
     </div>
   );

@@ -45,6 +45,10 @@ class ResearchContext:
     base_city: str | None
     nearby_days: list[str] = field(default_factory=list)  # "Tue May 4: Train to Porto (Porto)"
     nudge: str = ""
+    time_of_day: str = ""  # morning | afternoon | evening | "" when the traveler asked for a time
+    is_request: bool = False  # the gap is the traveler's own ask, in their words
+    planned_that_day: list[str] = field(default_factory=list)  # "Tasca do Chico (evening)"
+    stay: str | None = None  # "Hotel A, Baixa, Rua A 1, Lisbon"
     already_suggested: list[str] = field(default_factory=list)
     rejected: list[tuple[str, str]] = field(default_factory=list)  # (name, reason)
     today: date = field(default_factory=date.today)
@@ -189,11 +193,21 @@ def _format_context(ctx: ResearchContext) -> str:
         lines.append(f"Travelers: {ctx.travelers}")
     if ctx.interests:
         lines.append(f"Interests: {', '.join(ctx.interests)}")
-    lines += ["", f"Open item ({ctx.gap_kind}): {ctx.gap_prompt}"]
+    if ctx.is_request:
+        lines += ["", f"Open item ({ctx.gap_kind}), in the traveler's words: {ctx.gap_prompt}"]
+    else:
+        lines += ["", f"Open item ({ctx.gap_kind}): {ctx.gap_prompt}"]
+    if ctx.time_of_day:
+        lines.append(f"Time of day: {ctx.time_of_day}")
     if ctx.day_date:
         lines.append(f"Day: {ctx.day_date:%A %B} {ctx.day_date.day}, {ctx.day_date.year}")
     if ctx.base_city:
         lines.append(f"Based in: {ctx.base_city}")
+    if ctx.stay:
+        lines.append(f"Staying that night at: {ctx.stay}")
+    if ctx.planned_that_day:
+        lines += ["", "Already planned that day (fit around these, don't repeat them):"]
+        lines += [f"- {p}" for p in ctx.planned_that_day]
     if ctx.nearby_days:
         lines += ["", "Surrounding days:"] + [f"- {d}" for d in ctx.nearby_days]
     if ctx.gap_kind == "lodging":

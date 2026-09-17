@@ -2,7 +2,6 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import func
 from sqlmodel import Session, select
 
 from app.auth import current_user
@@ -21,6 +20,7 @@ from app.models import (
     TripMember,
     User,
 )
+from app.planning import OPEN_GAP_STATUSES, counts_as_missing, days_with_plans
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
@@ -72,14 +72,15 @@ def get_member_trip(session: Session, trip_id: str, user: User) -> Trip:
 
 
 def _open_gap_counts(session: Session, trip_ids: list[str]) -> dict[str, int]:
+    """Things still missing per trip (see planning.counts_as_missing)."""
     if not trip_ids:
         return {}
-    rows = session.exec(
-        select(Gap.trip_id, func.count())
-        .where(Gap.trip_id.in_(trip_ids), Gap.status.in_(("open", "researching")))
-        .group_by(Gap.trip_id)
-    )
-    return {trip_id: count for trip_id, count in rows}
+    planned = days_with_plans(session, trip_ids)
+    counts: dict[str, int] = {}
+    for gap in session.exec(select(Gap).where(Gap.trip_id.in_(trip_ids), Gap.status.in_(OPEN_GAP_STATUSES))):
+        if counts_as_missing(gap, planned):
+            counts[gap.trip_id] = counts.get(gap.trip_id, 0) + 1
+    return counts
 
 
 @router.get("", response_model=list[TripOut])
@@ -162,13 +163,11 @@ def list_days(
     trip = get_member_trip(session, trip_id, user)
     days = session.exec(select(Day).where(Day.trip_id == trip.id).order_by(Day.date)).all()
     places = {p.id: p.name for p in session.exec(select(Place).where(Place.trip_id == trip.id))}
-    gap_counts = dict(
-        session.exec(
-            select(Gap.day_id, func.count())
-            .where(Gap.trip_id == trip.id, Gap.status.in_(("open", "researching")))
-            .group_by(Gap.day_id)
-        ).all()
-    )
+    planned = days_with_plans(session, [trip.id])
+    gap_counts: dict[str | None, int] = {}
+    for gap in session.exec(select(Gap).where(Gap.trip_id == trip.id, Gap.status.in_(OPEN_GAP_STATUSES))):
+        if counts_as_missing(gap, planned):
+            gap_counts[gap.day_id] = gap_counts.get(gap.day_id, 0) + 1
     return [
         DayOut(
             id=d.id,

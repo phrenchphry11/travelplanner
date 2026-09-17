@@ -195,3 +195,21 @@ button.danger-solid { background: var(--danger); border-color: var(--danger); co
   .confirm-dialog[open] { animation: dialog-in 0.14s ease-out; }
   @keyframes dialog-in { from { opacity: 0; transform: translateY(6px) scale(0.98); } }
 }
+
+/* Adding and editing a day's plans */
+.add-plan-button { margin-top: 4px; }
+.add-plan { border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fbfaf7; display: grid; gap: 12px; margin-top: 4px; }
+.add-plan-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.segmented button { background: #fff; color: var(--ink); border: 0; border-radius: 0; padding: 6px 12px; font-weight: 400; }
+.segmented button + button { border-left: 1px solid var(--line); }
+.segmented button.active { background: var(--ink); color: #fff; font-weight: 600; }
+.plan-form { display: grid; gap: 10px; }
+.plan-form label { display: grid; gap: 4px; font-weight: 600; font-size: 0.95rem; }
+.plan-form input, .plan-form select, .plan-form textarea { font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid #cfc8bb; border-radius: 8px; background: #fff; min-width: 0; }
+.plan-form textarea { resize: vertical; }
+.plan-form p { margin: 0; }
+.plan-item.plan-form { display: grid; }
+.plan-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.move-buttons { display: inline-flex; gap: 4px; }
+.move-buttons button.icon { padding: 2px 8px; line-height: 1.2; }

@@ -9,12 +9,17 @@ import {
   ApiError,
   formatDateRange,
   isJobActive,
+  shortDate,
   STATUS_LABELS,
   useApi,
   type Board,
+  type BoardActivity,
   type BoardCandidate,
   type BoardDay,
   type BoardGap,
+  type NewPlan,
+  type PlanChanges,
+  type TimeOfDay,
 } from "../lib/api";
 
 const TABS = [
@@ -40,6 +45,8 @@ export default function TripBoard() {
   const [busy, setBusy] = useState(false);
   const [hoveredCandidateId, setHoveredCandidateId] = useState<string | null>(null);
   const [pendingChange, setPendingChange] = useState<BoardGap | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<BoardActivity | null>(null);
+  const [pendingDismiss, setPendingDismiss] = useState<BoardGap | null>(null);
   const polls = useRef(0);
 
   const load = useCallback(async () => {
@@ -111,6 +118,57 @@ export default function TripBoard() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Like act(), but errors go back to the caller so a form can show them next to its fields. */
+  async function submit<T>(fn: () => Promise<T>): Promise<T> {
+    setBusy(true);
+    try {
+      const result = await fn();
+      polls.current = 0;
+      await load();
+      return result;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Research costs money: this runs only from the "Find ideas" button.
+  async function findIdeas(day: BoardDay, request: string, timeOfDay: TimeOfDay) {
+    const out = await submit(() =>
+      api<{ gap_id: string }>(`/days/${day.id}/plan-requests`, {
+        method: "POST",
+        body: JSON.stringify({ request, time_of_day: timeOfDay }),
+      }),
+    );
+    nav({ gap: out.gap_id, day: day.date });
+  }
+
+  async function addPlan(day: BoardDay, plan: NewPlan) {
+    await submit(() => api(`/days/${day.id}/plans`, { method: "POST", body: JSON.stringify(plan) }));
+  }
+
+  async function editPlan(activity: BoardActivity, changes: PlanChanges) {
+    await submit(() => api(`/activities/${activity.id}`, { method: "PATCH", body: JSON.stringify(changes) }));
+  }
+
+  function movePlan(activity: BoardActivity, direction: "up" | "down") {
+    void act(() => api(`/activities/${activity.id}/move`, { method: "POST", body: JSON.stringify({ direction }) }));
+  }
+
+  async function confirmRemove() {
+    if (!pendingRemove) return;
+    const activity = pendingRemove;
+    await act(() => api(`/activities/${activity.id}`, { method: "DELETE" }));
+    setPendingRemove(null);
+  }
+
+  async function confirmDismiss() {
+    if (!pendingDismiss) return;
+    const gap = pendingDismiss;
+    await act(() => api(`/gaps/${gap.id}/dismiss`, { method: "POST" }));
+    setPendingDismiss(null);
+    closeDrawer();
   }
 
   async function startResearch(gap: BoardGap, nudge = "") {
@@ -203,6 +261,15 @@ export default function TripBoard() {
         .filter((o): o is MapOption => !!o.place && o.place.lat !== null && o.place.lng !== null)
     : [];
   const gapProps = { onOpenGap: openGapDrawer, onChange: changeChoice, startingGapIds, busy };
+  const planProps = {
+    onFindIdeas: findIdeas,
+    onAddPlan: addPlan,
+    onEditPlan: editPlan,
+    onMovePlan: movePlan,
+    onRemovePlan: setPendingRemove,
+  };
+  const removingChosen = pendingRemove ? board.gaps.some((g) => g.resolved_by_id === pendingRemove.id) : false;
+  const removingDay = pendingRemove ? board.days.find((d) => d.id === pendingRemove.day_id) : undefined;
 
   return (
     <main className="page wide">
@@ -254,6 +321,7 @@ export default function TripBoard() {
               onReject={(c, reason) => act(() => api(`/candidates/${c.id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }))}
               onRestore={(id) => act(() => api(`/candidates/${id}/restore`, { method: "POST" }))}
               onFindMore={(nudge) => startResearch(openGap, nudge)}
+              onDismiss={() => setPendingDismiss(openGap)}
             />
           ) : (
             <>
@@ -286,7 +354,7 @@ export default function TripBoard() {
               </nav>
 
               {tab === "overview" && <OverviewTab board={board} onOpenDay={openDay} onOpenGap={openGapDrawer} />}
-              {tab === "day" && selectedDay && <DayTab board={board} day={selectedDay} {...gapProps} />}
+              {tab === "day" && selectedDay && <DayTab board={board} day={selectedDay} {...gapProps} {...planProps} />}
               {tab === "lodging" && <LodgingTab board={board} onOpenDay={openDay} {...gapProps} />}
               {tab === "activities" && <ActivitiesTab board={board} onOpenDay={openDay} />}
             </>
@@ -306,6 +374,39 @@ export default function TripBoard() {
           <p>
             <strong>{describeChoice(pendingChange).name}</strong> will be removed from {describeChoice(pendingChange).when}.
             Your other options are still there, so you can pick again.
+          </p>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        title="Remove this plan?"
+        confirmLabel="Remove it"
+        tone={removingChosen ? "default" : "danger"}
+        busy={busy}
+        onConfirm={confirmRemove}
+        onCancel={() => setPendingRemove(null)}
+      >
+        {pendingRemove && (
+          <p>
+            <strong>{pendingRemove.name}</strong> will be removed from {removingDay ? shortDate(removingDay.date) : "this day"}.{" "}
+            {removingChosen ? "The other ideas we found are still there if you want to pick again." : "This can't be undone."}
+          </p>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={pendingDismiss !== null}
+        title="Remove this request?"
+        confirmLabel="Remove it"
+        tone="danger"
+        busy={busy}
+        onConfirm={confirmDismiss}
+        onCancel={() => setPendingDismiss(null)}
+      >
+        {pendingDismiss && (
+          <p>
+            <strong>{pendingDismiss.prompt}</strong> and the ideas we found for it will be removed from your day.
           </p>
         )}
       </ConfirmDialog>

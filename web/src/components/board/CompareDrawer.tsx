@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { isJobActive, nightsLabel, type Board, type BoardCandidate, type BoardGap } from "../../lib/api";
+import { isJobActive, nightsLabel, timeOfDayLabel, type Board, type BoardCandidate, type BoardGap } from "../../lib/api";
 import CandidateCard from "./CandidateCard";
 
 type Props = {
@@ -14,6 +14,8 @@ type Props = {
   onReject: (c: BoardCandidate, reason: string) => void;
   onRestore: (candidateId: string) => void;
   onFindMore: (nudge: string) => void;
+  /** Drop a "Find ideas" request nobody wants any more. */
+  onDismiss: () => void;
 };
 
 export default function CompareDrawer(props: Props) {
@@ -38,7 +40,10 @@ export default function CompareDrawer(props: Props) {
           ← Back to the board
         </button>
         <h3>{gap.prompt}</h3>
-        <p className="muted small">{nightsLabel(board, gap)}</p>
+        <p className="muted small">
+          {nightsLabel(board, gap)}
+          {gap.time_of_day && ` · ${timeOfDayLabel(gap.time_of_day)}`}
+        </p>
       </header>
 
       {answered && <p className="notice">You've chosen something for this. Use Change on the Day tab to pick again.</p>}
@@ -108,6 +113,14 @@ export default function CompareDrawer(props: Props) {
             ))}
           </ul>
         </details>
+      )}
+
+      {gap.origin === "request" && !answered && (
+        <p className="small">
+          <button type="button" className="link-button" disabled={busy} onClick={props.onDismiss}>
+            Remove this request
+          </button>
+        </p>
       )}
     </section>
   );

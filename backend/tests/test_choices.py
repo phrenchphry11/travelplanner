@@ -73,7 +73,7 @@ def test_choose_activity_adds_to_day_in_order(make_client, engine, session):
     ])
     out = client.post(f"/candidates/{gap['candidates'][0]['id']}/choose").json()
     act = session.get(Activity, out["resolved_by_id"])
-    assert (act.name, act.kind, act.start_time, act.booking_url, act.status) == (
+    assert (act.name, act.kind, act.time_of_day, act.booking_url, act.status) == (
         "Tasca", "meal", "evening", "https://book.example", "planned",
     )
     assert act.day_id == gap["day_id"] and act.sort_order == 0

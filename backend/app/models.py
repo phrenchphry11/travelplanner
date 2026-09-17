@@ -133,10 +133,11 @@ class Activity(SQLModel, table=True):
     place_id: str | None = Field(default=None, foreign_key="places.id")
     start_time: str = ""  # local "HH:MM" or free text
     end_time: str = ""
+    time_of_day: str = ""  # morning | afternoon | evening | "" (any time)
     booking_url: str = ""
     status: str = "idea"  # idea | shortlisted | planned | booked
     notes: str = ""
-    sort_order: int = 0
+    sort_order: int = 0  # order within the day's time-of-day group
 
 
 class Gap(SQLModel, table=True):
@@ -146,6 +147,9 @@ class Gap(SQLModel, table=True):
     day_id: str | None = Field(default=None, foreign_key="days.id", index=True)
     kind: str  # lodging | transit | activity | food | question
     prompt: str
+    # starter: made when the trip was confirmed. request: a traveler's own "Find ideas" ask.
+    origin: str = "starter"
+    time_of_day: str = ""  # morning | afternoon | evening | "" (any time); requests only
     status: str = "open"  # open | researching | answered | dismissed
     resolved_by_kind: str | None = None
     resolved_by_id: str | None = None

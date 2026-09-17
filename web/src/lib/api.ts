@@ -162,7 +162,12 @@ export type BoardGap = {
   day_id: string | null;
   kind: "lodging" | "transit" | "activity" | "food" | "question";
   prompt: string;
+  /** starter: made with the trip. request: the traveler asked for ideas. */
+  origin: "starter" | "request";
+  time_of_day: TimeOfDay;
   status: "open" | "researching" | "answered" | "dismissed";
+  /** Counts toward "What's still missing". A day's starter plan gap stops counting once the day has any plan. */
+  missing: boolean;
   covers_day_ids: string[];
   job: BoardJob | null;
   candidates: BoardCandidate[];
@@ -186,10 +191,27 @@ export type BoardActivity = {
   kind: string;
   place_id: string | null;
   start_time: string;
+  time_of_day: TimeOfDay;
+  sort_order: number;
   status: string;
   booking_url: string;
   notes: string;
 };
+
+export type TimeOfDay = "" | "morning" | "afternoon" | "evening";
+export const TIME_OF_DAY_OPTIONS: { value: TimeOfDay; label: string }[] = [
+  { value: "", label: "Any time" },
+  { value: "morning", label: "Morning" },
+  { value: "afternoon", label: "Afternoon" },
+  { value: "evening", label: "Evening" },
+];
+export function timeOfDayLabel(t: TimeOfDay): string {
+  return TIME_OF_DAY_OPTIONS.find((o) => o.value === t)?.label ?? "Any time";
+}
+
+export type NewPlan = { name: string; time_of_day: TimeOfDay; address: string; link: string; notes: string };
+export type PlanChanges = { name: string; time_of_day: TimeOfDay; link: string; notes: string };
+
 export type Board = {
   trip: Trip;
   days: BoardDay[];
