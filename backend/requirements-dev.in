@@ -1,0 +1,6 @@
+# Dev/test tools on top of the app. Compiled to requirements-dev.txt; the -c
+# keeps app packages at exactly the versions in requirements.txt.
+-r requirements.in
+-c requirements.txt
+pytest>=8,<9
+pip-tools>=7.4

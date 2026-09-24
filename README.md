@@ -20,12 +20,27 @@ Backend (SQLite by default, no Postgres needed):
 
 ```bash
 cd backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 cp .env.example .env            # add CLERK_ISSUER
 .venv/bin/alembic upgrade head
 .venv/bin/uvicorn app.main:app --reload --port 8000
 .venv/bin/python -m worker      # in another terminal
 ```
+
+Python dependencies are locked. `requirements.in` lists direct dependencies
+and the ranges we accept; `requirements.txt` pins every package exactly and is
+what Render installs. `requirements-dev.*` adds pytest and pip-tools. Never
+edit the `.txt` files by hand. To add or upgrade a package:
+
+```bash
+# edit requirements.in (or requirements-dev.in), then:
+.venv/bin/pip-compile --strip-extras --no-emit-index-url -o requirements.txt requirements.in
+.venv/bin/pip-compile --strip-extras --no-emit-index-url -o requirements-dev.txt requirements-dev.in
+.venv/bin/pip install -r requirements-dev.txt && .venv/bin/pytest -q
+```
+
+Add `--upgrade-package <name>` to bump one package, or `--upgrade` for all.
+Run the tests on Postgres too before pushing an upgrade.
 
 Frontend:
 

@@ -82,7 +82,8 @@ Rules for an agent in one of those worktrees:
   origin/master`, then check `.venv/bin/alembic heads` shows one head. If two,
   set your migration's `down_revision` to the other head.
 - **Shared dependencies:** `backend/.venv` is a symlink to the main checkout's
-  venv. Don't install into it; if requirements change, say so in the PR.
+  venv. Don't install into it; if requirements change (edit `requirements.in`,
+  re-run pip-compile, commit both files), say so in the PR.
   `web/node_modules` is your own copy, so `npm install` is fine.
 - **Conflicts:** rebase on `origin/master` and resolve; don't merge master
   into your branch.
@@ -92,7 +93,7 @@ Rules for an agent in one of those worktrees:
 
 ```bash
 # Backend (from backend/)
-.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pip install -r requirements-dev.txt   # locked pins; edit *.in and pip-compile, never the .txt (README)
 .venv/bin/pytest -q                    # API tests, in-memory SQLite (FKs on), auth overridden
 TEST_DATABASE_URL=postgresql://postgres@localhost:55432/tp .venv/bin/pytest -q  # same suite on Postgres; run before deploying DB changes
 .venv/bin/alembic upgrade head         # apply migrations to DATABASE_URL
