@@ -1,6 +1,6 @@
 fastapi>=0.141,<1
 uvicorn[standard]>=0.53,<1
-sqlmodel>=0.0.42,<0.1
+sqlmodel==0.0.42  # 0.0.47 rejects naive datetimes on bind; we store naive UTC (see app.models.utcnow)
 alembic>=1.20,<2
 psycopg[binary]>=3.3,<4
 pyjwt[crypto]>=2.14,<3
