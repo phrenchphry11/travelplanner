@@ -1,5 +1,6 @@
 import { RedirectToSignIn, SignedIn, SignedOut } from "@clerk/clerk-react";
 import { Navigate, Route, Routes } from "react-router-dom";
+import AdminCosts from "./pages/AdminCosts";
 import NewTrip from "./pages/NewTrip";
 import SharedTrip from "./pages/SharedTrip";
 import SignInPage from "./pages/SignIn";
@@ -28,6 +29,7 @@ export default function App() {
       <Route path="/trips" element={<Protected><TripList /></Protected>} />
       <Route path="/trips/new" element={<Protected><NewTrip /></Protected>} />
       <Route path="/trips/:tripId" element={<Protected><TripBoard /></Protected>} />
+      <Route path="/admin" element={<Protected><AdminCosts /></Protected>} />
       <Route path="*" element={<Navigate to="/trips" replace />} />
     </Routes>
   );

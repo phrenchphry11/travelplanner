@@ -342,3 +342,43 @@ export function nightsLabel(board: Board, gap: BoardGap): string {
   const n = days.length;
   return `${n} night${n === 1 ? "" : "s"} from ${shortDate(days[0].date)}`;
 }
+
+export type Me = { id: string; email: string; display_name: string; is_admin: boolean };
+
+export type CostTotals = {
+  runs: number;
+  failed_runs: number;
+  searches: number;
+  cost_usd: number;
+  intake_cost_usd: number;
+  research_cost_usd: number;
+};
+type TripLabel = { trip_id: string | null; title: string | null; deleted: boolean };
+export type TripCost = TripLabel & {
+  owner_email: string | null;
+  runs: number;
+  intake_turns: number;
+  research_runs: number;
+  searches: number;
+  cost_usd: number;
+  last_run_at: string;
+};
+export type UserCost = { user_id: string; email: string | null; trips: number; runs: number; cost_usd: number; last_run_at: string };
+export type AgentRunRow = TripLabel & {
+  id: string;
+  created_at: string;
+  kind: "intake" | "research";
+  ok: boolean;
+  model: string;
+  user_email: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  searches: number;
+  cost_usd: number;
+};
+export type CostSummary = {
+  totals: { all_time: CostTotals; last_30_days: CostTotals };
+  trips: TripCost[];
+  users: UserCost[];
+  recent: AgentRunRow[];
+};

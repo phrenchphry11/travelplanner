@@ -383,6 +383,11 @@ Starter tier on api and worker so nothing sleeps.
 - *Find options* gives visible feedback within 2 seconds and results within
   ~2 minutes; jobs can run longer without blocking the UI.
 - Per-trip and per-job agent cost stored and visible on an internal admin view.
+  Implemented 2026-09-23: every intake turn and research attempt (failed
+  ones included) writes an `agent_runs` ledger row that survives trash
+  purges. `/admin` (emails listed in `ADMIN_EMAILS`; everyone else gets a
+  404) shows 30-day and all-time totals, cost by trip and by user, and the
+  latest runs. Costs are estimates from list prices in config.
 - No raw JSON, ids, or model internals in user-facing UI.
 - Keyboard-navigable forms, sufficient contrast, alt text on map controls.
 - Data isolation: a user only ever reads trips they own (v1) or are a member
