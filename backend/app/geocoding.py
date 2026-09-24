@@ -48,6 +48,8 @@ class GeoResult:
     display_name: str
     category: str = ""
     country_code: str = ""
+    addresstype: str = ""  # Nominatim's level: city, town, county, state, ... (not cached)
+    name: str = ""  # the place's own name, without its surroundings (not cached)
 
 
 # Takes Nominatim search params (q, featureType, countrycodes, limit); returns results in rank order.
@@ -79,6 +81,8 @@ def nominatim_search(params: dict) -> list[GeoResult]:
             display_name=row.get("display_name", ""),
             category=row.get("category", ""),
             country_code=(row.get("address") or {}).get("country_code", ""),
+            addresstype=row.get("addresstype", ""),
+            name=row.get("name", ""),
         )
         for row in res.json()
     ]
@@ -108,25 +112,49 @@ def is_located_poi(result: GeoResult) -> bool:
     return result.category != "highway"
 
 
+TOWN_LEVELS = {"city", "town", "village", "municipality", "hamlet"}
+
+
+def first(results: list[GeoResult], query: str) -> GeoResult | None:
+    return results[0] if results else None
+
+
+def town_over_county(results: list[GeoResult], query: str) -> GeoResult | None:
+    """The first result, unless it's a county and a same-named town follows.
+
+    Nominatim ranks "Monterey County" above the city of Monterey for a
+    settlement search, which put the city's pin 63 km from its own hotels.
+    Regions (states, provinces) still win: "Tuscany" should stay a region.
+    """
+    if results and results[0].addresstype == "county":
+        wanted = _normalize(query)
+        town = next((r for r in results if r.addresstype in TOWN_LEVELS and _normalize(r.name) == wanted), None)
+        if town is not None:
+            return town
+    return first(results, query)
+
+
 def cached_lookup(
     session: Session,
     params: dict,
     fetch: Fetcher,
     accept: Callable[[GeoResult], bool] = is_area,
+    pick: Callable[[list[GeoResult], str], GeoResult | None] = first,
 ) -> GeoResult | None:
-    """First accepted result for these params, from cache or one network call.
+    """The picked accepted result for these params, from cache or one network call.
 
-    Only the accepted result (or the fact that none was acceptable) is cached,
-    keyed by params plus the acceptance rule. Network errors propagate and are
-    not cached.
+    Only that result (or the fact that none was acceptable) is cached, keyed by
+    params plus the acceptance and pick rules. Network errors propagate and
+    are not cached.
     """
-    key = _cache_key({**params, "_accept": accept.__name__})
+    rules = {"_accept": accept.__name__} | ({"_pick": pick.__name__} if pick is not first else {})
+    key = _cache_key({**params, **rules})
     hit = session.get(GeocodeCache, key)
     if hit is not None:
         if not hit.found:
             return None
         return GeoResult(hit.lat, hit.lng, hit.display_name, hit.category, hit.country_code)
-    result = next((r for r in fetch(params) if accept(r)), None)
+    result = pick([r for r in fetch(params) if accept(r)], params.get("q", ""))
     session.add(GeocodeCache(
         query=key,
         found=result is not None,
@@ -171,14 +199,17 @@ def locate_city(
     nearby = nearby or []
     limits = ",".join(sorted(country_codes))
     if country_codes:
-        result = cached_lookup(session, {"q": city, "featureType": "settlement", "countrycodes": limits}, fetch)
+        result = cached_lookup(
+            session, {"q": city, "featureType": "settlement", "countrycodes": limits, "limit": 5}, fetch,
+            pick=town_over_county,
+        )
         if result:
             return result
         # Regions and districts (not towns) inside the trip's countries.
         result = cached_lookup(session, {"q": city, "countrycodes": limits, "limit": 5}, fetch)
         if result:
             return result
-    result = cached_lookup(session, {"q": city, "featureType": "settlement"}, fetch)
+    result = cached_lookup(session, {"q": city, "featureType": "settlement", "limit": 5}, fetch, pick=town_over_county)
     if result is None:
         return None
     if country_codes and result.country_code in country_codes:

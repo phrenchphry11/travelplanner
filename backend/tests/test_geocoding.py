@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 from sqlmodel import Session, select
@@ -11,8 +11,9 @@ from app.geocoding import (
     geocode_trip_places,
     locate_city,
     needs_lookup,
+    town_over_county,
 )
-from app.models import GeocodeCache, Place, Trip, User, utcnow
+from app.models import Day, GeocodeCache, Lodging, Place, Trip, User, utcnow
 
 
 def _trip_with_cities(session, cities, destinations=("Portugal",)):
@@ -230,3 +231,43 @@ def test_option_map_query_is_tried_before_name(session):
     result = locate_option(session, "City centre stay", None, None, ["fr"], None, fake, map_query="Place de Jaude, Clermont-Ferrand")
     assert result.lat == 45.776
     assert fake.calls[0] == ("Place de Jaude, Clermont-Ferrand", None, "fr")
+
+
+def _level(name, addresstype, lat=0.0, lng=0.0):
+    return GeoResult(lat, lng, name, category="boundary", country_code="us", addresstype=addresstype, name=name)
+
+
+def test_town_over_county_only_skips_a_same_named_county():
+    county, town = _level("Monterey County", "county"), _level("Monterey", "city")
+    assert town_over_county([county, town], "Monterey") is town
+    assert town_over_county([county, town], " monterey ") is town
+    other = _level("Seaside", "city")
+    assert town_over_county([county, other], "Monterey") is county  # no same-named town: keep the county
+    tuscany, village = _level("Toscana", "state"), _level("Toscana", "village")
+    assert town_over_county([tuscany, village], "Toscana") is tuscany  # regions still win
+    assert town_over_county([], "Monterey") is None
+
+
+def test_monterey_city_pin_lets_its_hotels_pin_too(engine, session):
+    """Regression (travelplanner-ygh): 'Monterey' pinned to Monterey County's centre,
+    63 km from the city, so every option failed the 40 km check and got no map pin."""
+    trip, (monterey,) = _trip_with_cities(session, ["Monterey"], destinations=["California"])
+    hotel = Place(trip_id=trip.id, name="Monterey Plaza Hotel & Spa", kind="lodging", address="400 Cannery Row, Monterey, CA 93940")
+    session.add_all([hotel, Day(trip_id=trip.id, date=date(2026, 10, 1), title="Arrive", base_place_id=monterey.id)])
+    session.flush()
+    session.add(Lodging(trip_id=trip.id, place_id=hotel.id, check_in=date(2026, 10, 1), check_out=date(2026, 10, 4)))
+    session.commit()
+    fake = FakeNominatim({
+        ("California", None, None): [GeoResult(36.7, -119.4, "California", category="boundary", country_code="us")],
+        ("Monterey", "settlement", "us"): [
+            _level("Monterey County", "county", 36.22, -121.39),
+            _level("Monterey", "city", 36.60, -121.89),
+        ],
+        ("400 Cannery Row, Monterey, CA 93940", None, "us"): [
+            GeoResult(36.612, -121.898, "Monterey Plaza Hotel & Spa", category="tourism", country_code="us"),
+        ],
+    })
+    geocode_trip_places(trip.id, session_factory=lambda: Session(engine), fetch=fake)
+    with Session(engine) as s:
+        found = {p.name: (p.lat, p.lng) for p in s.exec(select(Place))}
+    assert found == {"Monterey": (36.60, -121.89), "Monterey Plaza Hotel & Spa": (36.612, -121.898)}
