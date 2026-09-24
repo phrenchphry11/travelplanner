@@ -7,13 +7,15 @@ from app.agents.intake import (
     ChatMessage,
     DraftDay,
     IntakeError,
+    IntakeResult,
     IntakeTurn,
     TripDraft,
     _build_messages,
     get_intake_runner,
 )
+from app.agents.usage import Usage
 from app.main import app
-from app.models import Day, Gap, IntakeSession, Place, Trip, utcnow
+from app.models import AgentRun, Day, Gap, IntakeSession, Place, Trip, utcnow
 from app.trash import expire_unconfirmed_intake_sessions, hard_delete_trip
 
 
@@ -37,7 +39,7 @@ def fake_runner():
             calls.append((history, current_draft, today))
             if isinstance(result, Exception):
                 raise result
-            return result
+            return IntakeResult(result, Usage(input_tokens=1000, output_tokens=200, model="claude-opus-5"))
 
         app.dependency_overrides[get_intake_runner] = lambda: runner
         return calls
@@ -91,6 +93,20 @@ def test_turn_surfaces_agent_errors_as_friendly_502(make_client, fake_runner):
     res = make_client().post("/intake/turn", json={"messages": [{"role": "user", "content": "x"}]})
     assert res.status_code == 502
     assert res.json()["detail"] == "The trip assistant is busy right now."
+
+
+def test_failed_turn_that_reached_claude_is_still_costed(make_client, fake_runner, session):
+    fake_runner(IntakeError("The trip assistant gave an unexpected answer.", Usage(input_tokens=800, output_tokens=40)))
+    res = make_client().post("/intake/turn", json={"messages": [{"role": "user", "content": "x"}]})
+    assert res.status_code == 502
+    run = session.exec(select(AgentRun)).one()
+    assert (run.kind, run.ok, run.user_id, run.input_tokens) == ("intake", False, "user_a", 800)
+
+
+def test_failed_turn_that_never_reached_claude_costs_nothing(make_client, fake_runner, session):
+    fake_runner(IntakeError("The trip assistant is busy right now."))
+    make_client().post("/intake/turn", json={"messages": [{"role": "user", "content": "x"}]})
+    assert session.exec(select(AgentRun)).all() == []
 
 
 def test_build_messages_appends_draft_to_last_user_turn_only():
@@ -173,10 +189,16 @@ def test_confirm_links_session_to_trip_and_it_no_longer_resumes(make_client, fak
     assert stored.trip_id == trip_id
     assert client.get("/intake/session").json() is None  # no longer an unconfirmed session to resume
 
+    run = session.exec(select(AgentRun).where(AgentRun.intake_session_id == session_id)).one()
+    assert (run.kind, run.ok, run.user_id, run.trip_id) == ("intake", True, "user_a", trip_id)
+    assert run.model == "claude-opus-5" and run.cost_usd > 0
+
     trip = session.get(Trip, trip_id)
     hard_delete_trip(session, trip)
     session.commit()
     assert session.get(IntakeSession, session_id) is None  # deleted with its trip
+    session.expire_all()
+    assert session.get(AgentRun, run.id).trip_id == trip_id  # the cost ledger outlives the trip
 
 
 def test_expire_unconfirmed_intake_sessions(make_client, fake_runner, session):

@@ -1,6 +1,7 @@
 from sqlmodel import Session, select
 
-from app.agents.research import ResearchResult, ResearchUsage, _format_context
+from app.agents.research import ResearchResult, _format_context
+from app.agents.usage import Usage
 from app.geocoding import GeoResult, geocode_trip_places, get_trip_locator
 from app.main import app
 from app.models import Activity, Gap, Place, ResearchJob
@@ -27,7 +28,7 @@ def _run_worker(engine, options):
 
     def runner(ctx):
         captured["ctx"] = ctx
-        return ResearchResult(options, ResearchUsage())
+        return ResearchResult(options, Usage())
 
     with Session(engine) as s:
         run_job(s, claim_job(s), runner=runner, fetch=lambda p: [])

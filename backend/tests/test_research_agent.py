@@ -131,8 +131,9 @@ def test_gives_up_after_max_turns():
 
 def test_refusal_raises_friendly_error():
     client = FakeClient([response("refusal", [])])
-    with pytest.raises(ResearchError, match="couldn't help"):
+    with pytest.raises(ResearchError, match="couldn't help") as exc:
         research_gap(ctx(), client=client)
+    assert exc.value.usage.input_tokens == 100  # the refused call is still billed
 
 
 def test_caps_at_five_candidates():

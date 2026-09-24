@@ -253,6 +253,31 @@ class ResearchJob(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class AgentRun(SQLModel, table=True):
+    """One billed agent run: an intake turn or one attempt at a research job. Append-only.
+
+    No foreign keys on purpose: the ledger outlives trash purges and expired
+    intake chats, since its job is to price usage after the fact (PRD 9).
+    Research runs are billed to the trip's owner.
+    """
+    __tablename__ = "agent_runs"
+    id: str = Field(default_factory=new_id, primary_key=True)
+    kind: str = Field(index=True)  # intake|research
+    ok: bool = True  # false when the run ended in an error the user saw
+    user_id: str = Field(index=True)
+    trip_id: str | None = Field(default=None, index=True)
+    intake_session_id: str | None = Field(default=None, index=True)  # links intake turns to their trip on confirm
+    research_job_id: str | None = None
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_read_tokens: int = 0
+    searches: int = 0
+    cost_usd: float = 0.0
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class GeocodeCache(SQLModel, table=True):
     """Accepted Nominatim results keyed by normalized search params. Required by its usage policy."""
     __tablename__ = "geocode_cache"

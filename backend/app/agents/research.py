@@ -17,6 +17,7 @@ from urllib.parse import urlsplit, urlunsplit
 import anthropic
 from pydantic import BaseModel, ValidationError
 
+from app.agents.usage import Usage
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -29,7 +30,11 @@ BLOCKED_DOMAINS = ["pinterest.com", "quora.com"]
 
 
 class ResearchError(Exception):
-    """A user-presentable research failure."""
+    """A user-presentable research failure, with whatever usage was spent before it."""
+
+    def __init__(self, message: str, usage: Usage | None = None) -> None:
+        super().__init__(message)
+        self.usage = usage
 
 
 # ---- Inputs -----------------------------------------------------------------
@@ -95,37 +100,9 @@ class CandidateIn(BaseModel):
 
 
 @dataclass
-class ResearchUsage:
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_write_tokens: int = 0
-    cache_read_tokens: int = 0
-    searches: int = 0
-
-    def add(self, usage: Any) -> None:
-        self.input_tokens += usage.input_tokens or 0
-        self.output_tokens += usage.output_tokens or 0
-        self.cache_write_tokens += usage.cache_creation_input_tokens or 0
-        self.cache_read_tokens += usage.cache_read_input_tokens or 0
-        stu = getattr(usage, "server_tool_use", None)
-        self.searches += (getattr(stu, "web_search_requests", 0) or 0) if stu else 0
-
-    def cost_usd(self) -> float:
-        s = get_settings()
-        return round(
-            self.input_tokens / 1e6 * s.price_input_per_mtok
-            + self.output_tokens / 1e6 * s.price_output_per_mtok
-            + self.cache_write_tokens / 1e6 * s.price_cache_write_per_mtok
-            + self.cache_read_tokens / 1e6 * s.price_cache_read_per_mtok
-            + self.searches * s.price_per_search,
-            4,
-        )
-
-
-@dataclass
 class ResearchResult:
     candidates: list[CandidateIn]
-    usage: ResearchUsage
+    usage: Usage
 
 
 # ---- Tool + prompt ----------------------------------------------------------
@@ -313,8 +290,16 @@ def _client() -> anthropic.Anthropic:
 
 
 def research_gap(ctx: ResearchContext, client: Any = None) -> ResearchResult:
+    usage = Usage()
+    try:
+        return _research_loop(ctx, client or _client(), usage)
+    except ResearchError as exc:
+        exc.usage = usage  # a failed run still cost money
+        raise
+
+
+def _research_loop(ctx: ResearchContext, client: Any, usage: Usage) -> ResearchResult:
     settings = get_settings()
-    client = client or _client()
     tools = [
         {
             "type": "web_search_20260318",
@@ -330,7 +315,6 @@ def research_gap(ctx: ResearchContext, client: Any = None) -> ResearchResult:
         },
     ]
     messages: list[dict[str, Any]] = [{"role": "user", "content": _format_context(ctx)}]
-    usage = ResearchUsage()
     seen_urls: set[str] = set()
 
     for turn in range(settings.research_max_turns):
@@ -353,7 +337,7 @@ def research_gap(ctx: ResearchContext, client: Any = None) -> ResearchResult:
         except anthropic.APIConnectionError as exc:
             raise ResearchError("Couldn't reach the research assistant. Try again.") from exc
 
-        usage.add(response.usage)
+        usage.add(response)
         seen_urls |= collect_result_urls(response.content)
         log.info(
             "research turn=%d stop=%s in=%d out=%d searches_so_far=%d",

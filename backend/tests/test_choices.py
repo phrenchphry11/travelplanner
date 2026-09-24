@@ -1,6 +1,7 @@
 from sqlmodel import Session, select
 
-from app.agents.research import CandidateIn, ResearchResult, ResearchUsage
+from app.agents.research import CandidateIn, ResearchResult
+from app.agents.usage import Usage
 from app.geocoding import GeoResult, locate_option
 from app.models import Activity, Candidate, Lodging, Place
 from worker.__main__ import claim_job, run_job
@@ -34,7 +35,7 @@ def _research(client, engine, trip_id, kind, options, day_index=0, fetch=lambda 
     gap = gaps[day_index] if kind == "activity" else gaps[0]
     client.post(f"/gaps/{gap['id']}/research")
     with Session(engine) as s:
-        run_job(s, claim_job(s), runner=lambda ctx: ResearchResult(options, ResearchUsage()), fetch=fetch)
+        run_job(s, claim_job(s), runner=lambda ctx: ResearchResult(options, Usage()), fetch=fetch)
     board = client.get(f"/trips/{trip_id}/board").json()
     return board, next(g for g in board["gaps"] if g["id"] == gap["id"])
 

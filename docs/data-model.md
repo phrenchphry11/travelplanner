@@ -134,6 +134,22 @@ One agent run. Lets the UI show progress and lets the worker be idempotent.
 | id, trip_id, gap_id | |
 | status | `queued`, `running`, `done`, `failed` |
 | started_at, finished_at, error | |
+| input_tokens, output_tokens, search_count, cost_usd | usage of the latest attempt |
+
+### AgentRun
+Append-only cost ledger (PRD 9): one row per intake turn and per research
+job attempt, including runs that failed after reaching Claude. No foreign
+keys, so rows outlive trash purges and expired intake chats.
+| field | notes |
+|---|---|
+| id, kind | `intake` or `research` |
+| ok | false if the run ended in an error the user saw |
+| user_id | who is billed; the trip owner for research |
+| trip_id, intake_session_id, research_job_id | nullable; intake turns get `trip_id` on confirm |
+| model | the model that answered (differs after a fallback) |
+| input_tokens, output_tokens, cache_write_tokens, cache_read_tokens, searches | |
+| cost_usd | estimate from list prices in config |
+| created_at | |
 
 ## Deliberately left out of v1
 - Event anchors (races, festivals). Add later as `Event` attached to Trip or Day.

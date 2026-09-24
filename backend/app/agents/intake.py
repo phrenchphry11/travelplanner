@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
 from typing import Literal
@@ -14,6 +15,7 @@ from typing import Literal
 import anthropic
 from pydantic import BaseModel, Field
 
+from app.agents.usage import Usage
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -56,7 +58,17 @@ class ChatMessage(BaseModel):
 
 
 class IntakeError(Exception):
-    """A user-presentable intake failure."""
+    """A user-presentable intake failure, with the usage spent if Claude answered."""
+
+    def __init__(self, message: str, usage: Usage | None = None) -> None:
+        super().__init__(message)
+        self.usage = usage
+
+
+@dataclass
+class IntakeResult:
+    turn: IntakeTurn
+    usage: Usage
 
 
 SYSTEM_PROMPT = """You help a traveler turn a rough trip idea into a day-by-day skeleton they can edit. Many travelers are not technical, so keep replies short, warm, and plain.
@@ -89,7 +101,7 @@ def _build_messages(history: list[ChatMessage], current_draft: TripDraft | None)
     return messages
 
 
-def run_intake(history: list[ChatMessage], current_draft: TripDraft | None, today: date) -> IntakeTurn:
+def run_intake(history: list[ChatMessage], current_draft: TripDraft | None, today: date) -> IntakeResult:
     questions_asked = sum(1 for m in history if m.role == "assistant" and m.kind == "question")
     system = SYSTEM_PROMPT.format(max_follow_ups=MAX_FOLLOW_UPS, today=today.isoformat())
     messages = _build_messages(history, current_draft)
@@ -120,23 +132,23 @@ def run_intake(history: list[ChatMessage], current_draft: TripDraft | None, toda
         log.exception("intake connection error")
         raise IntakeError("Couldn't reach the trip assistant. Try again.") from exc
 
+    usage = Usage()
+    usage.add(response)
     log.info(
         "intake model=%s stop=%s in=%s out=%s",
         response.model, response.stop_reason, response.usage.input_tokens, response.usage.output_tokens,
     )
     if response.stop_reason == "refusal":
-        raise IntakeError("The trip assistant couldn't help with that request. Try describing the trip differently.")
+        raise IntakeError("The trip assistant couldn't help with that request. Try describing the trip differently.", usage)
     turn = response.parsed_output
-    if turn is None:
-        raise IntakeError("The trip assistant gave an unexpected answer. Try again.")
-    if turn.kind == "draft" and turn.draft is None:
-        raise IntakeError("The trip assistant gave an unexpected answer. Try again.")
+    if turn is None or (turn.kind == "draft" and turn.draft is None):
+        raise IntakeError("The trip assistant gave an unexpected answer. Try again.", usage)
     if turn.draft is not None and not (1 <= len(turn.draft.days) <= MAX_DAYS):
-        raise IntakeError(f"Trips can be 1 to {MAX_DAYS} days. Try a shorter trip or split it up.")
-    return turn
+        raise IntakeError(f"Trips can be 1 to {MAX_DAYS} days. Try a shorter trip or split it up.", usage)
+    return IntakeResult(turn, usage)
 
 
-IntakeRunner = Callable[[list[ChatMessage], TripDraft | None, date], IntakeTurn]
+IntakeRunner = Callable[[list[ChatMessage], TripDraft | None, date], IntakeResult]
 
 
 def get_intake_runner() -> IntakeRunner:

@@ -2,8 +2,9 @@ from datetime import timedelta
 
 from sqlmodel import Session, select
 
-from app.agents.research import CandidateIn, ResearchError, ResearchResult, ResearchUsage
-from app.models import Candidate, Gap, Place, ResearchJob, Source, utcnow
+from app.agents.research import CandidateIn, ResearchError, ResearchResult
+from app.agents.usage import Usage
+from app.models import AgentRun, Candidate, Gap, Place, ResearchJob, Source, utcnow
 from worker.__main__ import claim_job, recover_stale_jobs, run_job
 
 
@@ -59,7 +60,7 @@ def test_success_saves_candidates_places_sources_and_usage(make_client, engine):
     trip_id = _confirm(client)
     gap_id = _queue(client, trip_id, nudge="near the river")
 
-    usage = ResearchUsage(input_tokens=2000, output_tokens=500, searches=4)
+    usage = Usage(input_tokens=2000, output_tokens=500, searches=4)
     result = ResearchResult(
         candidates=[_candidate("Hotel A"), _candidate("Hotel B", lat=None, lng=None, sources=[], unverified=True, confidence="low")],
         usage=usage,
@@ -78,6 +79,9 @@ def test_success_saves_candidates_places_sources_and_usage(make_client, engine):
         assert (job.input_tokens, job.output_tokens, job.search_count) == (2000, 500, 4)
         assert job.cost_usd > 0
         assert s.get(Gap, gap_id).status == "open"
+        run = s.exec(select(AgentRun)).one()
+        assert (run.kind, run.ok, run.user_id, run.trip_id, run.research_job_id) == ("research", True, "user_a", trip_id, job_id)
+        assert (run.searches, run.cost_usd) == (4, job.cost_usd)
 
         cands = s.exec(select(Candidate).where(Candidate.gap_id == gap_id).order_by(Candidate.created_at)).all()
         assert [c.payload["name"] for c in cands] == ["Hotel A", "Hotel B"]
@@ -101,11 +105,11 @@ def test_owner_cards_flow_into_lodging_and_activity_context_only(make_client, en
     trip_id = _confirm(client)
 
     _queue(client, trip_id, kind="lodging")
-    _, lodging_ctx = _run(engine, lambda ctx: ResearchResult([_candidate("Hotel A")], ResearchUsage()))
+    _, lodging_ctx = _run(engine, lambda ctx: ResearchResult([_candidate("Hotel A")], Usage()))
     assert lodging_ctx.user_cards == ["Chase Sapphire Reserve"]
 
     _queue(client, trip_id, kind="activity")
-    _, activity_ctx = _run(engine, lambda ctx: ResearchResult([_candidate("Castle")], ResearchUsage()))
+    _, activity_ctx = _run(engine, lambda ctx: ResearchResult([_candidate("Castle")], Usage()))
     assert activity_ctx.user_cards == ["Chase Sapphire Reserve"]
 
 
@@ -120,7 +124,7 @@ def test_perks_are_stamped_with_a_checked_date_and_reach_the_board(make_client, 
             {"card": "Amex Platinum", "note": "May be bookable through the travel portal.",
              "source_url": "https://portal.example/deal", "source_title": "Portal"},
         ])],
-        usage=ResearchUsage(),
+        usage=Usage(),
     )
     _run(engine, lambda ctx: result)
 
@@ -142,7 +146,7 @@ def test_activity_place_kinds(make_client, engine):
     _queue(client, trip_id, kind="activity")
     result = ResearchResult(
         candidates=[_candidate("Tasca", activity_kind="meal"), _candidate("Castle", activity_kind="sight")],
-        usage=ResearchUsage(),
+        usage=Usage(),
     )
     _run(engine, lambda ctx: result)
     with Session(engine) as s:
@@ -154,7 +158,7 @@ def test_second_run_excludes_previous_and_rejected(make_client, engine):
     client = make_client()
     trip_id = _confirm(client)
     gap_id = _queue(client, trip_id)
-    _run(engine, lambda ctx: ResearchResult([_candidate("Hotel A"), _candidate("Hotel B")], ResearchUsage()))
+    _run(engine, lambda ctx: ResearchResult([_candidate("Hotel A"), _candidate("Hotel B")], Usage()))
 
     with Session(engine) as s:
         b = s.exec(select(Candidate).where(Candidate.gap_id == gap_id)).all()[1]
@@ -163,7 +167,7 @@ def test_second_run_excludes_previous_and_rejected(make_client, engine):
         s.commit()
 
     client.post(f"/gaps/{gap_id}/research")
-    _, ctx = _run(engine, lambda ctx: ResearchResult([_candidate("Hotel C")], ResearchUsage()))
+    _, ctx = _run(engine, lambda ctx: ResearchResult([_candidate("Hotel C")], Usage()))
     assert ctx.already_suggested == ["Hotel A"]
     assert ctx.rejected == [("Hotel B", "too far out")]
 
@@ -185,11 +189,27 @@ def test_research_error_fails_job_and_reopens_gap(make_client, engine):
     assert client.post(f"/gaps/{gap_id}/research").json()["id"] != job_id
 
 
+def test_research_error_still_records_what_was_spent(make_client, engine):
+    client = make_client()
+    trip_id = _confirm(client)
+    _queue(client, trip_id)
+
+    def boom(ctx):
+        raise ResearchError("The research assistant didn't finish in time.", Usage(input_tokens=9000, searches=5))
+
+    job_id, _ = _run(engine, boom)
+    with Session(engine) as s:
+        job = s.get(ResearchJob, job_id)
+        assert job.status == "failed" and job.search_count == 5 and job.cost_usd > 0
+        run = s.exec(select(AgentRun)).one()
+        assert (run.ok, run.trip_id, run.research_job_id, run.cost_usd) == (False, trip_id, job_id, job.cost_usd)
+
+
 def test_no_candidates_is_a_failure(make_client, engine):
     client = make_client()
     trip_id = _confirm(client)
     _queue(client, trip_id)
-    job_id, _ = _run(engine, lambda ctx: ResearchResult([], ResearchUsage(searches=5)))
+    job_id, _ = _run(engine, lambda ctx: ResearchResult([], Usage(searches=5)))
     with Session(engine) as s:
         job = s.get(ResearchJob, job_id)
         assert job.status == "failed"

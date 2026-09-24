@@ -16,7 +16,9 @@ from sqlalchemy import or_, update
 from sqlmodel import Session, select
 
 from app.agents.research import CandidateIn, ResearchContext, ResearchError, ResearchRunner, research_gap
+from app.agents.usage import Usage
 from app.config import get_settings
+from app.costs import record_agent_run
 from app.db import engine
 from app import geocoding
 from app.geocoding import Fetcher
@@ -212,12 +214,26 @@ def save_candidates(session: Session, job: ResearchJob, gap: Gap, candidates: li
     return saved
 
 
-def _fail(session: Session, job: ResearchJob, message: str) -> None:
+def _record_usage(session: Session, job: ResearchJob, usage: Usage, ok: bool) -> None:
+    job.input_tokens = usage.input_tokens
+    job.output_tokens = usage.output_tokens
+    job.search_count = usage.searches
+    job.cost_usd = usage.cost_usd()
+    trip = session.get(Trip, job.trip_id)
+    record_agent_run(
+        session, "research", usage,
+        user_id=trip.owner_id if trip else "", trip_id=job.trip_id, research_job_id=job.id, ok=ok,
+    )
+
+
+def _fail(session: Session, job: ResearchJob, message: str, usage: Usage | None = None) -> None:
     session.rollback()
     job = session.get(ResearchJob, job.id)
     job.status = "failed"
     job.error = message
     job.finished_at = utcnow()
+    if usage is not None:
+        _record_usage(session, job, usage, ok=False)
     gap = session.get(Gap, job.gap_id)
     if gap is not None and gap.status == "researching":
         gap.status = "open"
@@ -237,14 +253,11 @@ def run_job(
         ctx = build_context(session, job)
         result = runner(ctx)
     except ResearchError as exc:
-        _fail(session, job, str(exc))
+        _fail(session, job, str(exc), exc.usage)
         return
 
     gap = session.get(Gap, job.gap_id)
-    job.input_tokens = result.usage.input_tokens
-    job.output_tokens = result.usage.output_tokens
-    job.search_count = result.usage.searches
-    job.cost_usd = result.usage.cost_usd()
+    _record_usage(session, job, result.usage, ok=bool(result.candidates))
 
     if not result.candidates:
         job.status = "failed"

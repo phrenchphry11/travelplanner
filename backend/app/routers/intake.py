@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import update
 from sqlmodel import Session, select
 
 from app.agents.intake import (
@@ -15,9 +16,10 @@ from app.agents.intake import (
     get_intake_runner,
 )
 from app.auth import current_user
+from app.costs import record_agent_run
 from app.db import get_session
 from app.geocoding import get_trip_locator
-from app.models import Day, Gap, IntakeSession, Place, Trip, TripMember, User, utcnow
+from app.models import AgentRun, Day, Gap, IntakeSession, Place, Trip, TripMember, User, utcnow
 from app.routers.trips import TripOut, to_trip_out
 from app.trash import INTAKE_SESSION_EXPIRY
 
@@ -63,16 +65,23 @@ def intake_turn(
     session: Session = Depends(get_session),
     runner: IntakeRunner = Depends(get_intake_runner),
 ) -> IntakeTurnResponse:
+    record = _own_open_session(session, user, body.session_id)
     try:
-        turn = runner(body.messages, body.current_draft, date.today())
+        result = runner(body.messages, body.current_draft, date.today())
     except IntakeError as exc:
+        if exc.usage is not None:
+            record_agent_run(
+                session, "intake", exc.usage, user_id=user.id, ok=False,
+                intake_session_id=record.id if record else None,
+            )
+            session.commit()
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
+    turn = result.turn
     messages = [m.model_dump() for m in body.messages] + [
         {"role": "assistant", "content": turn.reply, "kind": turn.kind}
     ]
     draft = turn.draft.model_dump() if turn.draft else (body.current_draft.model_dump() if body.current_draft else None)
-    record = _own_open_session(session, user, body.session_id)
     if record is None:
         record = IntakeSession(user_id=user.id, messages=messages, current_draft=draft)
     else:
@@ -80,6 +89,7 @@ def intake_turn(
         record.current_draft = draft
         record.updated_at = utcnow()
     session.add(record)
+    record_agent_run(session, "intake", result.usage, user_id=user.id, intake_session_id=record.id)
     session.commit()
     session.refresh(record)
     return IntakeTurnResponse(reply=turn.reply, kind=turn.kind, draft=turn.draft, session_id=record.id)
@@ -238,6 +248,7 @@ def confirm_draft(
     if record is not None:
         record.trip_id = trip.id
         session.add(record)
+        session.exec(update(AgentRun).where(AgentRun.intake_session_id == record.id).values(trip_id=trip.id))
     session.commit()
     session.refresh(trip)
     background.add_task(locate, trip.id)
