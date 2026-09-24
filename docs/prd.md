@@ -84,6 +84,11 @@ Cards for each trip with title, dates, status (dreaming / planning / booked /
 done), and open-gap count. *Start a trip* button. Empty state explains what
 the app does in two sentences.
 
+Trip status (2026-09-24): set by hand from the pill on the board heading,
+which is a picker. Any member can change it. Nothing changes it
+automatically: "booked" means actually booked, which the app can't tell
+from choices made in it.
+
 ### 5.2 Intake conversation
 Single-column chat panel. First message is the prompt. Agent replies are
 short. When it has enough, it says so and shows the skeleton beneath the

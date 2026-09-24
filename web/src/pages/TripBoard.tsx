@@ -33,6 +33,7 @@ import {
   type SavedPlaceChanges,
   type TransitChanges,
   type TimeOfDay,
+  type Trip,
 } from "../lib/api";
 
 const TABS = [
@@ -156,6 +157,15 @@ export default function TripBoard() {
       return result;
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function changeStatus(status: Trip["status"]) {
+    setError(null);
+    try {
+      await submit(() => api(`/trips/${board!.trip.id}`, { method: "PATCH", body: JSON.stringify({ status }) }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -425,7 +435,17 @@ export default function TripBoard() {
           <Link to="/trips" className="small">← All trips</Link>
           <h1>{board.trip.title}</h1>
           <p className="muted">
-            <span className={`status-pill status-${board.trip.status}`}>{STATUS_LABELS[board.trip.status]}</span>{" "}
+            <select
+              className={`status-pill status-select status-${board.trip.status}`}
+              aria-label="Trip status"
+              value={board.trip.status}
+              onChange={(e) => changeStatus(e.target.value as Trip["status"])}
+              disabled={busy}
+            >
+              {(Object.keys(STATUS_LABELS) as Trip["status"][]).map((s) => (
+                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+              ))}
+            </select>{" "}
             {formatDateRange(board.trip.start_date, board.trip.end_date)} ·{" "}
             {board.trip.open_gap_count === 0 ? "Nothing missing" : `${board.trip.open_gap_count} things still missing`}
           </p>

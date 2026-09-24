@@ -53,3 +53,27 @@ def test_owner_can_delete_trip_with_children(make_client, session):
     assert client.delete(f"/trips/{trip_id}").status_code == 204
     assert client.get(f"/trips/{trip_id}").status_code == 404
     assert client.get("/trips").json() == []
+
+
+def test_members_can_change_status_and_it_persists(make_client):
+    owner = make_client("owner")
+    trip_id = owner.post("/trips", json={"title": "Portugal"}).json()["id"]
+    res = owner.patch(f"/trips/{trip_id}", json={"status": "booked"})
+    assert res.status_code == 200 and res.json()["status"] == "booked"
+    assert owner.get(f"/trips/{trip_id}").json()["status"] == "booked"
+    assert owner.get("/trips").json()[0]["status"] == "booked"
+
+    editor = make_client("editor")
+    editor.get("/me")  # has signed in before, so the invite adds them right away
+    owner.post(f"/trips/{trip_id}/collaborators", json={"email": "editor@example.com"})
+    assert editor.patch(f"/trips/{trip_id}", json={"status": "done"}).json()["status"] == "done"
+
+
+def test_status_change_rejects_unknown_values_and_strangers(make_client):
+    owner = make_client("owner")
+    trip_id = owner.post("/trips", json={"title": "Portugal"}).json()["id"]
+    assert owner.patch(f"/trips/{trip_id}", json={"status": "cancelled"}).status_code == 422
+    assert make_client("stranger").patch(f"/trips/{trip_id}", json={"status": "done"}).status_code == 404
+    owner.delete(f"/trips/{trip_id}")
+    assert owner.patch(f"/trips/{trip_id}", json={"status": "done"}).status_code == 404  # in the trash
+    assert owner.get("/trips?deleted=true").json()[0]["status"] == "dreaming"

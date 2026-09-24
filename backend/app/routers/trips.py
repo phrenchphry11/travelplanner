@@ -1,5 +1,6 @@
 from collections import Counter
 from datetime import date, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
@@ -12,7 +13,7 @@ from app.planning import OPEN_GAP_STATUSES, counts_as_missing, days_with_plans
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 
-TRIP_STATUSES = ("dreaming", "planning", "booked", "done")
+TripStatus = Literal["dreaming", "planning", "booked", "done"]  # set by hand from the board
 
 
 class TripCreate(BaseModel):
@@ -123,6 +124,27 @@ def get_trip(
     session: Session = Depends(get_session),
 ) -> TripOut:
     trip = get_member_trip(session, trip_id, user)
+    return to_trip_out(trip, user.id, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
+
+
+class TripUpdate(BaseModel):
+    status: TripStatus
+
+
+@router.patch("/{trip_id}", response_model=TripOut)
+def update_trip(
+    trip_id: str,
+    body: TripUpdate,
+    user: User = Depends(current_user),
+    session: Session = Depends(get_session),
+) -> TripOut:
+    """Set the trip's status by hand. Any member can; it's part of planning, like the days."""
+    trip = get_member_trip(session, trip_id, user)
+    trip.status = body.status
+    trip.updated_at = utcnow()
+    session.add(trip)
+    session.commit()
+    session.refresh(trip)
     return to_trip_out(trip, user.id, _open_gap_counts(session, [trip.id]).get(trip.id, 0))
 
 
