@@ -91,3 +91,14 @@ def current_user(
         if email_changed:
             redeem_invites(session, user)
     return user
+
+
+def is_admin(user: User) -> bool:
+    return bool(user.email) and user.email in get_settings().admin_email_list
+
+
+def require_admin(user: User = Depends(current_user)) -> User:
+    """404 rather than 403 for everyone else, so the admin view isn't advertised."""
+    if not is_admin(user):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    return user

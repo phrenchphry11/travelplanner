@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # allowed to request tokens for it.
     authorized_parties: str = ""
     anthropic_api_key: str = ""
+    # Comma-separated emails that can see the internal admin view (agent costs).
+    admin_emails: str = ""
     intake_model: str = "claude-opus-5"
     research_model: str = "claude-opus-5"
     # Tuned 2026-09-16: 8 searches at medium effort cost ~$0.85 per gap, mostly
@@ -47,6 +49,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def admin_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.admin_emails.split(",") if e.strip()]
 
     @property
     def authorized_party_list(self) -> list[str]:

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field, field_validator
 from sqlmodel import Session, select
 
-from app.auth import current_user
+from app.auth import current_user, is_admin
 from app.card_catalog import CARD_CATALOG
 from app.db import get_session
 from app.models import User, UserCard
@@ -12,7 +12,7 @@ router = APIRouter(tags=["me"])
 
 @router.get("/me")
 def me(user: User = Depends(current_user)) -> dict:
-    return {"id": user.id, "email": user.email, "display_name": user.display_name}
+    return {"id": user.id, "email": user.email, "display_name": user.display_name, "is_admin": is_admin(user)}
 
 
 @router.get("/cards/catalog")
