@@ -40,3 +40,4 @@
 {"id":"int-c355f767","kind":"field_change","created_at":"2026-09-24T02:18:59.234124Z","actor":"Holly French","issue_id":"travelplanner-63y.2","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-ea10b4e8","kind":"field_change","created_at":"2026-09-24T02:22:16.878933Z","actor":"Holly French","issue_id":"travelplanner-63y.3","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-81b3e9fd","kind":"field_change","created_at":"2026-09-24T02:22:18.255302Z","actor":"Holly French","issue_id":"travelplanner-63y","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
+{"id":"int-f7a45110","kind":"field_change","created_at":"2026-09-24T02:56:20.056962Z","actor":"Holly French","issue_id":"travelplanner-29s","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
